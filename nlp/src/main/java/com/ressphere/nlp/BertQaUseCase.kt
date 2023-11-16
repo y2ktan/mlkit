@@ -94,6 +94,7 @@ class BertQaUseCase(
 
     override fun execute(question: String) {
         scope.launch {
+            Log.d(TAG, "content: $content")
             bertQaHelper?.answer(content, question)
         }
     }

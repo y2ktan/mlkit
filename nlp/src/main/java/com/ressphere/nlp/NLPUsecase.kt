@@ -2,11 +2,8 @@ package com.ressphere.nlp
 
 import android.app.Application
 import android.util.Log
-import com.ressphere.dataset.LoadDataSetClient
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
@@ -67,7 +64,7 @@ class NLPUsecase(
     fun answer(question: String) {
         Log.d(TAG, "question: $question")
         //bertQaUseCaseExecutor.execute(question)
-        entityExtractionUseCaseExecutor.execute(question)
+        bertQaUseCaseExecutor.execute(question)
     }
 
     companion object {

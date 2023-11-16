@@ -33,7 +33,6 @@ android {
 }
 
 dependencies {
-
     implementation("androidx.core:core-ktx:1.9.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.10.0")
@@ -43,11 +42,18 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-smart-reply:16.0.0-beta1")
     implementation("org.tensorflow:tensorflow-lite-task-text:0.3.0")
     // Import the GPU delegate plugin Library for GPU inference
-    implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.0")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.9.0")
+//    implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.0")
+//    implementation("org.tensorflow:tensorflow-lite-gpu:2.9.0")
+//    implementation("org.tensorflow:tensorflow-lite-support:0.2.0")
 
-    implementation("org.tensorflow:tensorflow-text-java:0.2.0")
-    implementation("ai.huggingface:transformers:4.18.0")
+//    implementation("org.openjfx:javafx-controls:11.0.2")
+//    implementation("edu.stanford.nlp:stanford-corenlp:4.5.5") {
+//        exclude(module="junit")
+//    }
+//    implementation("edu.stanford.nlp:stanford-corenlp:4.5.5:models") {
+//        exclude(module="junit")
+//    }
+//    implementation(files("libs/stanford-corenlp-4.5.5-models.jar"))
 
     // Gson library
     implementation("com.google.code.gson:gson:2.9.0")
@@ -56,4 +62,9 @@ dependencies {
 
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+
+    // Exclude the conflicting class from the JAXB library
+//    api(group = "com.sun.xml.bind", name = "jaxb-impl", version = "2.4.0-b180830.0438") {
+//        exclude(group = "com.sun.xml.bind", module = "jaxb-core-2.3.0.1")
+//    }
 }
