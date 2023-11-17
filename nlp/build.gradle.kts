@@ -41,10 +41,8 @@ dependencies {
     // Use this dependency to use the dynamically downloaded model in Google Play Services
     implementation("com.google.android.gms:play-services-mlkit-smart-reply:16.0.0-beta1")
     implementation("org.tensorflow:tensorflow-lite-task-text:0.3.0")
-    // Import the GPU delegate plugin Library for GPU inference
-//    implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.0")
-//    implementation("org.tensorflow:tensorflow-lite-gpu:2.9.0")
-//    implementation("org.tensorflow:tensorflow-lite-support:0.2.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.9.0")
+
 
 //    implementation("org.openjfx:javafx-controls:11.0.2")
 //    implementation("edu.stanford.nlp:stanford-corenlp:4.5.5") {

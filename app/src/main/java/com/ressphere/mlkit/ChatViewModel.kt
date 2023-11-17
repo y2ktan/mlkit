@@ -38,6 +38,7 @@ class ChatViewModel(app: Application, dispatcher: CoroutineDispatcher): AndroidV
                 _sourceMessage.update {
                     it.plus(ChatMessage("source", "vp", message, Color.Blue))
                 }
+                appModule.textToSpeechUseCase.speak(message)
             }.launchIn(this)
         }
     }

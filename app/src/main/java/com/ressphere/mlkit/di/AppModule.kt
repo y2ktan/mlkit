@@ -4,11 +4,13 @@ import android.app.Application
 import com.ressphere.nlp.NLPUsecase
 import com.ressphere.speech2text.SpeechRecognitionListener
 import com.ressphere.speech2text.SpeechToTextUseCase
+import com.ressphere.text2speech.TextToSpeechUseCase
 
 interface AppModule {
     val speechToTextUseCase: SpeechToTextUseCase
     val speechRecognitionListener: SpeechRecognitionListener
     val nlpUseCase: NLPUsecase
+    val textToSpeechUseCase: TextToSpeechUseCase
 }
 
 class AppModuleImpl(
@@ -18,6 +20,12 @@ class AppModuleImpl(
         SpeechToTextUseCase(
             application.applicationContext,
             speechRecognitionListener
+        )
+    }
+
+    override val textToSpeechUseCase: TextToSpeechUseCase by lazy {
+        TextToSpeechUseCase(
+            application.applicationContext
         )
     }
 
