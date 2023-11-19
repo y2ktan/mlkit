@@ -34,9 +34,11 @@ class ChatViewModel(app: Application, dispatcher: CoroutineDispatcher): AndroidV
         }
 
         viewModelScope.launch(dispatcher) {
-            appModule.nlpUseCase.vpReply.onEach { message ->
-                _sourceMessage.update {
-                    it.plus(ChatMessage("source", "vp", message, Color.Blue))
+            appModule.nlpUseCase.vpReply.onEach {
+                val message = it?: "I'm sorry, I don't know"
+                _sourceMessage.update { chatMessages ->
+                    chatMessages.plus(ChatMessage("source", "vp",
+                        message, Color.Blue))
                 }
                 appModule.textToSpeechUseCase.speak(message)
             }.launchIn(this)

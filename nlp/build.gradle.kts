@@ -1,6 +1,8 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
+
 }
 
 android {
@@ -42,16 +44,12 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-smart-reply:16.0.0-beta1")
     implementation("org.tensorflow:tensorflow-lite-task-text:0.3.0")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.9.0")
-
-
-//    implementation("org.openjfx:javafx-controls:11.0.2")
-//    implementation("edu.stanford.nlp:stanford-corenlp:4.5.5") {
-//        exclude(module="junit")
-//    }
-//    implementation("edu.stanford.nlp:stanford-corenlp:4.5.5:models") {
-//        exclude(module="junit")
-//    }
-//    implementation(files("libs/stanford-corenlp-4.5.5-models.jar"))
+    val ktorVersion = "1.6.3"
+    implementation("io.ktor:ktor-client-core:$ktorVersion")
+    implementation("io.ktor:ktor-client-android:$ktorVersion")
+    implementation("io.ktor:ktor-client-serialization:$ktorVersion")
+    implementation("io.ktor:ktor-client-logging:$ktorVersion")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.3.0")
 
     // Gson library
     implementation("com.google.code.gson:gson:2.9.0")

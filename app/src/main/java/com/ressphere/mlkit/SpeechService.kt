@@ -27,7 +27,7 @@ class SpeechService: Service() {
 
     override fun onCreate() {
         super.onCreate()
-        MyApplication.appModule.nlpUseCase.loadBertQa()
+        MyApplication.appModule.nlpUseCase.loadNLP()
         speechServiceCoroutine.launch {
             withContext(Dispatchers.Default) {
                 MyApplication.appModule.speechRecognitionListener.flow.collectLatest {
@@ -65,7 +65,7 @@ class SpeechService: Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        MyApplication.appModule.nlpUseCase.unloadBertQa()
+        MyApplication.appModule.nlpUseCase.unloadNLP()
         job.cancel()
     }
 
