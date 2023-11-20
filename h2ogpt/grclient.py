@@ -647,16 +647,18 @@ class GradioClient(Client):
                         response = response.strip()
                     else:
                         response = [r.strip() for r in response]
-                    sources = res["sources"]
-                    scores_out = [x["score"] for x in sources]
-                    texts_out = [x["content"] for x in sources]
-                    if asserts:
-                        if text and not file and not url:
-                            assert any(
-                                text[:cutoff] == texts_out for cutoff in range(len(text))
-                            )
-                        assert len(texts_out) == len(scores_out)
-
+                    if "sources" in res:
+                        sources = res["sources"]
+                        scores_out = [x["score"] for x in sources]
+                        texts_out = [x["content"] for x in sources]
+                        if asserts:
+                            if text and not file and not url:
+                                assert any(
+                                    text[:cutoff] == texts_out for cutoff in range(len(text))
+                                )
+                            assert len(texts_out) == len(scores_out)
+                    else:
+                        texts_out = ""
                     yield response, texts_out
                 else:
                     job = client.submit(str(dict(kwargs)), api_name=api_name)
