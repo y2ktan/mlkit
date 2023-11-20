@@ -54,17 +54,16 @@ else
     git pull
 fi
 
+# Check the OSTYPE
+case "$(uname -s)" in
+    Linux*)     terminal_cmd="gnome-terminal --working-directory=\"$PWD\" -- bash -c \"$python_cmd h2oclient.py; read -p \\\"Press enter to exit...\\\"\"" ;;
+    Darwin*)    terminal_cmd="osascript -e \"tell app \\\"Terminal\\\" to do script \\\"cd \\\"$PWD\\\"; $python_cmd h2oclient.py; read -p \\\"Press enter to exit...\\\"\\\"\"" ;;
+    CYGWIN*|MINGW*|MSYS*)    terminal_cmd="start cmd.exe /k \"cd \\\"$PWD\\\" && $python_cmd h2oclient.py & pause\"" ;;
+    *)          echo "Unsupported OS type: $(uname -s)"; exit 1 ;;
+esac
+
 # Open a new terminal and run h2oclient.py
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    gnome-terminal --working-directory="$PWD" -- bash -c "$python_cmd h2oclient.py; read -p \"Press enter to exit...\""
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-    osascript -e "tell app \"Terminal\" to do script \"cd \\\"$PWD\\\"; $python_cmd h2oclient.py; read -p \\\"Press enter to exit...\\\"\""
-elif [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-    start cmd.exe /k "cd \"$PWD\" && $python_cmd h2oclient.py & pause"
-else
-    echo "Unsupported OS type: $OSTYPE"
-    exit 1
-fi
+eval "$terminal_cmd"
 
 $python_cmd generate.py \
          --base_model=llama \
