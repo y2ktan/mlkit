@@ -27,10 +27,8 @@ def make_prediction(question: str, local_server=True):
         # if you have API key for public instance:
         client = GradioClient("https://gpt.h2o.ai", h2ogpt_key=h2ogpt_key)
 
-    url = "https://cdn.openai.com/papers/whisper.pdf"
-
     # Q/A
-    result = client.query("{}. Limit the answer to maximum 100 words".format(question), url=url)
+    result = client.query("{}. Limit the answer to maximum 100 words".format(question))
     return result
 
 
