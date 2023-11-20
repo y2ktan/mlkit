@@ -41,18 +41,18 @@ class H2OPostsServiceImpl(private val client: HttpClient): H2OPostsService {
             }
         } catch(e: RedirectResponseException) {
             Log.e(TAG, "Error: ${e.response.status.description}")
-            null
+            GPTResponse("Error: ${e.response.status.description}")
         } catch(e: ClientRequestException) {
             // 4xx - responses
             Log.e(TAG, "Error: ${e.response.status.description}")
-            null
+            GPTResponse("Error: ${e.response.status.description}")
         } catch(e: ServerResponseException) {
             // 5xx - responses
             Log.e(TAG, "Error: ${e.response.status.description}")
-            null
+            GPTResponse("Error: ${e.response.status.description}")
         } catch(e: Exception) {
             Log.e(TAG, "Error: ${e.message}")
-            null
+            GPTResponse("Error: ${e.message}")
         }
     }
 
