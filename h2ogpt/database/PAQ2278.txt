@@ -1,0 +1,8 @@
+Bus information
+Plate number PAQ2278
+Location 172 Avenue 1, Plantation Florida USA
+Recorded Time: 1300 27 November 2023
+
+Ali is detected on the bus. He is sitting and sleeping in row 12
+Yuri is detected on the bus. She is carrying a bottle and brown beg.
+James is detected on the bus.
