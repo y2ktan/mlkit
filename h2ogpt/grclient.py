@@ -8,11 +8,13 @@ import concurrent.futures
 import time
 import urllib.parse
 import uuid
+from concurrent.futures import Future
 from datetime import timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Generator, Any, Union, List
 import ast
+from packaging import version
 
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 
@@ -22,6 +24,18 @@ from huggingface_hub.utils import (
 )
 
 from gradio_client import utils
+
+from importlib.metadata import distribution, PackageNotFoundError
+
+try:
+    assert distribution('gradio_client') is not None
+    have_gradio_client = True
+    is_gradio_client_version7 = distribution('gradio_client').version.startswith('0.7.')
+except (PackageNotFoundError, AssertionError):
+    have_gradio_client = False
+    is_gradio_client_version7 = False
+
+
 from gradio_client.client import Job, DEFAULT_TEMP_DIR, Endpoint
 from gradio_client import Client
 
@@ -54,14 +68,17 @@ class LangChainAction(Enum):
     EXTRACT = "Extract"
 
 
-pre_prompt_query0 = "Pay attention and remember the information below, which will help to answer the question or imperative after the context ends.\n"
-prompt_query0 = "According to only the information in the document sources provided within the context above, "
+pre_prompt_query0 = "Pay attention and remember the information below, which will help to answer the question or imperative after the context ends."
+prompt_query0 = "According to only the information in the document sources provided within the context above: "
 
-pre_prompt_summary0 = """\n"""
-prompt_summary0 = "Using only the information in the document sources above, write a condensed and concise summary of key results (preferably as bullet points):\n"
+pre_prompt_summary0 = """"""
+prompt_summary0 = "Using only the information in the document sources above, write a condensed and concise summary of key results (preferably as bullet points)."
 
-pre_prompt_extraction0 = """In order to extract information, pay attention to the following text\n"""
-prompt_extraction0 = "Using only the information in the document sources above, extract: \n"
+pre_prompt_extraction0 = """In order to extract information, pay attention to the following text."""
+prompt_extraction0 = "Using only the information in the document sources above, extract "
+
+
+hyde_llm_prompt0 = "Answer this question with vibrant details in order for some NLP embedding model to use that answer as better query than original question: "
 
 
 class GradioClient(Client):
@@ -75,10 +92,14 @@ class GradioClient(Client):
             src: str,
             hf_token: str | None = None,
             max_workers: int = 40,
-            serialize: bool = True,
+            serialize: bool = None,
             output_dir: str | Path | None = DEFAULT_TEMP_DIR,
-            verbose: bool = True,
+            verbose: bool = False,
+            auth: tuple[str, str] | None = None,
             h2ogpt_key: str = None,
+            persist: bool = False,
+            check_hash: bool = True,
+            check_model_name: bool = False,
     ):
         """
         Parameters:
@@ -88,7 +109,18 @@ class GradioClient(Client):
             serialize: Whether the client should serialize the inputs and deserialize the outputs of the remote API. If set to False, the client will pass the inputs and outputs as-is, without serializing/deserializing them. E.g. you if you set this to False, you'd submit an image in base64 format instead of a filepath, and you'd get back an image in base64 format from the remote API instead of a filepath.
             output_dir: The directory to save files that are downloaded from the remote API. If None, reads from the GRADIO_TEMP_DIR environment variable. Defaults to a temporary directory on your machine.
             verbose: Whether the client should print statements to the console.
+
+            h2ogpt_key: h2oGPT key to gain access to the server
+            persist: whether to persist the state, so repeated calls are aware of the prior user session
+                     This allows the scratch MyData to be reused, etc.
+                     This also maintains the chat_conversation history
+            check_hash: whether to check git hash for consistency between server and client to ensure API always up to date
+            check_model_name: whether to check the model name here (adds delays), or just let server fail (fater)
         """
+        if serialize is None:
+            # else converts inputs arbitrarily and outputs mutate
+            # False keeps as-is and is normal for h2oGPT
+            serialize = False
         self.args = tuple([src])
         self.kwargs = dict(
             hf_token=hf_token,
@@ -97,18 +129,35 @@ class GradioClient(Client):
             output_dir=output_dir,
             verbose=verbose,
             h2ogpt_key=h2ogpt_key,
+            persist=persist,
+            check_hash=check_hash,
+            check_model_name=check_model_name,
         )
+        if is_gradio_client_version7:
+            self.kwargs.update(dict(auth=auth))
 
         self.verbose = verbose
         self.hf_token = hf_token
         self.serialize = serialize
         self.space_id = None
-        self.output_dir = output_dir
+        self.cookies: dict[str, str] = {}
+        if is_gradio_client_version7:
+            self.output_dir = (
+                str(output_dir) if isinstance(output_dir, Path) else output_dir
+            )
+        else:
+            self.output_dir = output_dir
         self.max_workers = max_workers
         self.src = src
+        self.auth = auth
         self.config = None
-        self.server_hash = None
         self.h2ogpt_key = h2ogpt_key
+        self.persist = persist
+        self.check_hash = check_hash
+        self.check_model_name = check_model_name
+
+        self.chat_conversation = []  # internal for persist=True
+        self.server_hash = None  # internal
 
     def __repr__(self):
         if self.config:
@@ -128,6 +177,7 @@ class GradioClient(Client):
             library_name="gradio_client",
             library_version=utils.__version__,
         )
+        # self.headers.pop('authorization', None)  # else get illegal Bearer for old servers
         if src.startswith("http://") or src.startswith("https://"):
             _src = src if src.endswith("/") else src + "/"
         else:
@@ -153,19 +203,44 @@ class GradioClient(Client):
         if self.verbose:
             print(f"Loaded as API: {self.src} ✔")
 
+        if is_gradio_client_version7:
+            if self.auth is not None:
+                self._login(self.auth)
+
         self.api_url = urllib.parse.urljoin(self.src, utils.API_URL)
+        if is_gradio_client_version7:
+            self.sse_url = urllib.parse.urljoin(self.src, utils.SSE_URL)
+            self.sse_data_url = urllib.parse.urljoin(self.src, utils.SSE_DATA_URL)
         self.ws_url = urllib.parse.urljoin(
             self.src.replace("http", "ws", 1), utils.WS_URL
         )
         self.upload_url = urllib.parse.urljoin(self.src, utils.UPLOAD_URL)
         self.reset_url = urllib.parse.urljoin(self.src, utils.RESET_URL)
         self.config = self._get_config()
+        if is_gradio_client_version7:
+            self.protocol: str = self.config.get("protocol", "ws")
+            self.app_version = version.parse(self.config.get("version", "2.0"))
+            self._info = self._get_api_info()
         self.session_hash = str(uuid.uuid4())
 
-        self.endpoints = [
-            Endpoint(self, fn_index, dependency)
-            for fn_index, dependency in enumerate(self.config["dependencies"])
-        ]
+        if is_gradio_client_version7:
+            from gradio_client.client import EndpointV3Compatibility
+            endpoint_class = (
+                Endpoint if self.protocol.startswith("sse") else EndpointV3Compatibility
+            )
+        else:
+            endpoint_class = Endpoint
+
+        if is_gradio_client_version7:
+            self.endpoints = [
+                endpoint_class(self, fn_index, dependency, self.protocol)
+                for fn_index, dependency in enumerate(self.config["dependencies"])
+            ]
+        else:
+            self.endpoints = [
+                endpoint_class(self, fn_index, dependency)
+                for fn_index, dependency in enumerate(self.config["dependencies"])
+            ]
 
         # Create a pool of threads to handle the requests
         self.executor = concurrent.futures.ThreadPoolExecutor(
@@ -177,6 +252,13 @@ class GradioClient(Client):
 
         self.server_hash = self.get_server_hash()
 
+        if is_gradio_client_version7:
+            self.stream_open = False
+            self.streaming_future: Future | None = None
+            from gradio_client.utils import Message
+            self.pending_messages_per_event: dict[str, list[Message | None]] = {}
+            self.pending_event_ids: set[str] = set()
+
         return self
 
     def get_server_hash(self):
@@ -186,23 +268,28 @@ class GradioClient(Client):
         Get server hash using super without any refresh action triggered
         Returns: git hash of gradio server
         """
-        return super().submit(api_name="/system_hash").result()
+        if self.check_hash:
+            return super().submit(api_name="/system_hash").result()
+        else:
+            return "GET_GITHASH"
 
-    def refresh_client_if_should(self, persist=True):
+    def refresh_client_if_should(self):
         if self.config is None:
             self.setup()
         # get current hash in order to update api_name -> fn_index map in case gradio server changed
         # FIXME: Could add cli api as hash
         server_hash = self.get_server_hash()
         if self.server_hash != server_hash:
+            if self.verbose:
+                print("server hash changed: %s %s" % (self.server_hash, server_hash), flush=True)
+            if self.server_hash is not None and self.persist:
+                if self.verbose:
+                    print("Failed to persist due to server hash change, only kept chat_conversation not user session hash", flush=True)
             # risky to persist if hash changed
-            self.refresh_client(persist=False)
+            self.refresh_client()
             self.server_hash = server_hash
-        else:
-            if not persist:
-                self.reset_session()
 
-    def refresh_client(self, persist=True):
+    def refresh_client(self):
         """
         Ensure every client call is independent
         Also ensure map between api_name and fn_index is updated in case server changed (e.g. restarted with new code)
@@ -210,15 +297,37 @@ class GradioClient(Client):
         """
         if self.config is None:
             self.setup()
-        if not persist:
-            # need session hash to be new every time, to avoid "generator already executing"
-            self.reset_session()
 
         kwargs = self.kwargs.copy()
         kwargs.pop('h2ogpt_key', None)
-        client = Client(*self.args, **kwargs)
+        kwargs.pop('persist', None)
+        kwargs.pop('check_hash', None)
+        kwargs.pop('check_model_name', None)
+        ntrials = 3
+        client = None
+        for trial in range(0, ntrials + 1):
+            try:
+                client = Client(*self.args, **kwargs)
+            except ValueError as e:
+                if trial >= ntrials:
+                    raise
+                else:
+                    if self.verbose:
+                        print("Trying refresh %d/%d %s" % (trial, ntrials - 1, str(e)))
+                    trial += 1
+                    time.sleep(10)
+        if client is None:
+            raise RuntimeError("Failed to get new client")
+        session_hash0 = self.session_hash if self.persist else None
         for k, v in client.__dict__.items():
             setattr(self, k, v)
+        if session_hash0:
+            # keep same system hash in case server API only changed and not restarted
+            self.session_hash = session_hash0
+        if self.verbose:
+            print("Hit refresh_client(): %s %s" % (self.session_hash, session_hash0))
+        # ensure server hash also updated
+        self.server_hash = self.get_server_hash()
 
     def clone(self):
         if self.config is None:
@@ -234,6 +343,9 @@ class GradioClient(Client):
             Endpoint(client, fn_index, dependency)
             for fn_index, dependency in enumerate(client.config["dependencies"])
         ]
+        # transfer internals in case used
+        client.server_hash = self.server_hash
+        client.chat_conversation = self.chat_conversation
         return client
 
     def submit(
@@ -384,6 +496,10 @@ class GradioClient(Client):
                                       top_k_docs: int = 10,
                                       document_choice: Union[str, List[str]] = "All",
                                       document_subset: str = "Relevant",
+                                      document_source_substrings: Union[str, List[str]] = [],
+                                      document_source_substrings_op: str = 'and',
+                                      document_content_substrings: Union[str, List[str]] = [],
+                                      document_content_substrings_op: str = 'and',
 
                                       system_prompt: str | None = '',
                                       pre_prompt_query: str | None = pre_prompt_query0,
@@ -392,6 +508,7 @@ class GradioClient(Client):
                                       prompt_summary: str | None = prompt_summary0,
                                       pre_prompt_extraction: str | None = pre_prompt_extraction0,
                                       prompt_extraction: str | None = prompt_extraction0,
+                                      hyde_llm_prompt: str | None = hyde_llm_prompt0,
 
                                       model: str | int | None = None,
                                       stream_output: bool = False,
@@ -415,6 +532,7 @@ class GradioClient(Client):
                                       docs_joiner: str = "\n\n",
                                       hyde_level: int = 0,
                                       hyde_template: str = None,
+                                      hyde_show_only_final: bool = True,
                                       doc_json_mode: bool = False,
 
                                       asserts: bool = False,
@@ -425,13 +543,17 @@ class GradioClient(Client):
             instruction: Query for LLM chat.  Used for similarity search
 
             For query, prompt template is:
-              "{pre_prompt_query}\"\"\"
+              "{pre_prompt_query}
+                \"\"\"
                 {content}
-                \"\"\"\n{prompt_query}{instruction}"
+                \"\"\"
+                {prompt_query}{instruction}"
              If added to summarization, prompt template is
-              "{pre_prompt_summary}:\"\"\"
+              "{pre_prompt_summary}
+                \"\"\"
                 {content}
-                \"\"\"\n, Focusing on {instruction}, {prompt_summary}"
+                \"\"\"
+                Focusing on {instruction}, {prompt_summary}"
             text: textual content or list of such contents
             file: a local file to upload or files to upload
             url: a url to give or urls to use
@@ -448,6 +570,10 @@ class GradioClient(Client):
             chunk_size: Size in characters of chunks
             document_choice: Which documents ("All" means all) -- need to use upload_api API call to get server's name if want to select
             document_subset: Type of query, see src/gen.py
+            document_source_substrings: See gen.py
+            document_source_substrings_op: See gen.py
+            document_content_substrings: See gen.py
+            document_content_substrings_op: See gen.py
 
             system_prompt: pass system prompt to models that support it.
               If 'auto' or None, then use automatic version
@@ -461,10 +587,12 @@ class GradioClient(Client):
               None makes h2oGPT internally use its defaults
               E.g. "Using only the text above, write a condensed and concise summary of key results (preferably as bullet points):\n"
             i.e. for some internal document part fstring, the template looks like:
-                template = "%s:
+                template = "%s
                 \"\"\"
                 %s
-                \"\"\"\n%s" % (pre_prompt_summary, fstring, prompt_summary)
+                \"\"\"
+                %s" % (pre_prompt_summary, fstring, prompt_summary)
+            hyde_llm_prompt: hyde prompt for first step when using LLM
             h2ogpt_key: Access Key to h2oGPT server (if not already set in client at init time)
             model: base_model name or integer index of model_lock on h2oGPT server
                             None results in use of first (0th index) model in server
@@ -508,6 +636,7 @@ class GradioClient(Client):
                         2: uses query + LLM response using docs to find similarity with docs
                         3+: etc.
             hyde_template: see src/gen.py
+            hyde_show_only_final: see src/gen.py
             doc_json_mode: see src/gen.py
 
             asserts: whether to do asserts to ensure handling is correct
@@ -517,7 +646,10 @@ class GradioClient(Client):
         """
         if self.config is None:
             self.setup()
-        client = self.clone()
+        if self.persist:
+            client = self
+        else:
+            client = self.clone()
         h2ogpt_key = h2ogpt_key or self.h2ogpt_key
         client.h2ogpt_key = h2ogpt_key
 
@@ -526,7 +658,7 @@ class GradioClient(Client):
         # chunking not used here
         # MyData specifies scratch space, only persisted for this individual client call
         langchain_mode = langchain_mode or "MyData"
-        loaders = tuple([None, None, None, None])
+        loaders = tuple([None, None, None, None, None, None])
         doc_options = tuple([langchain_mode, chunk, chunk_size, embed])
         asserts |= bool(os.getenv("HARD_ASSERTS", False))
         if (
@@ -600,12 +732,17 @@ class GradioClient(Client):
             top_k_docs=top_k_docs,
             document_choice=document_choice,
             document_subset=document_subset,
+            document_source_substrings=document_source_substrings,
+            document_source_substrings_op=document_source_substrings_op,
+            document_content_substrings=document_content_substrings,
+            document_content_substrings_op=document_content_substrings_op,
 
             system_prompt=system_prompt,
             pre_prompt_query=pre_prompt_query,
             prompt_query=prompt_query,
             pre_prompt_summary=pre_prompt_summary,
             prompt_summary=prompt_summary,
+            hyde_llm_prompt=hyde_llm_prompt,
 
             visible_models=model,
             stream_output=stream_output,
@@ -619,7 +756,7 @@ class GradioClient(Client):
             max_new_tokens=max_new_tokens,
 
             add_search_to_context=add_search_to_context,
-            chat_conversation=chat_conversation,
+            chat_conversation=chat_conversation if chat_conversation else self.chat_conversation,
             text_context_list=text_context_list,
             docs_ordering_type=docs_ordering_type,
             min_max_new_tokens=min_max_new_tokens,
@@ -629,8 +766,15 @@ class GradioClient(Client):
             docs_joiner=docs_joiner,
             hyde_level=hyde_level,
             hyde_template=hyde_template,
+            hyde_show_only_final=hyde_show_only_final,
             doc_json_mode=doc_json_mode,
         )
+
+        # in case server changed, update in case clone()
+        self.server_hash = client.server_hash
+
+        # ensure can fill conversation
+        self.chat_conversation.append((instruction, None))
 
         # get result
         trials = 3
@@ -641,25 +785,26 @@ class GradioClient(Client):
                         str(dict(kwargs)),
                         api_name=api_name,
                     )
+                    # in case server changed, update in case clone()
+                    self.server_hash = client.server_hash
                     res = ast.literal_eval(res)
                     response = res["response"]
                     if langchain_action != LangChainAction.EXTRACT.value:
                         response = response.strip()
                     else:
-                        response = [r.strip() for r in response]
-                    if "sources" in res:
-                        sources = res["sources"]
-                        scores_out = [x["score"] for x in sources]
-                        texts_out = [x["content"] for x in sources]
-                        if asserts:
-                            if text and not file and not url:
-                                assert any(
-                                    text[:cutoff] == texts_out for cutoff in range(len(text))
-                                )
-                            assert len(texts_out) == len(scores_out)
-                    else:
-                        texts_out = ""
+                        response = [r.strip() for r in ast.literal_eval(response)]
+                    sources = res["sources"]
+                    scores_out = [x["score"] for x in sources]
+                    texts_out = [x["content"] for x in sources]
+                    if asserts:
+                        if text and not file and not url:
+                            assert any(
+                                text[:cutoff] == texts_out for cutoff in range(len(text))
+                            )
+                        assert len(texts_out) == len(scores_out)
+
                     yield response, texts_out
+                    self.chat_conversation[-1] = (instruction, response)
                 else:
                     job = client.submit(str(dict(kwargs)), api_name=api_name)
                     text0 = ""
@@ -676,8 +821,6 @@ class GradioClient(Client):
                             res = job.communicator.job.outputs[-1]
                             res_dict = ast.literal_eval(res)
                             response = res_dict["response"]  # keeps growing
-                            sources = res_dict["sources"]
-                            texts_out = [x["content"] for x in sources]
                             text_chunk = response[len(text0):]  # only keep new stuff
                             if not text_chunk:
                                 time.sleep(0.001)
@@ -701,10 +844,12 @@ class GradioClient(Client):
                         sources = res_dict["sources"]
                         texts_out = [x["content"] for x in sources]
                         yield response[len(text0):], texts_out
+                        self.chat_conversation[-1] = (instruction, response[len(text0):])
                     else:
                         # 1.0 slightly longer than 0.3 in open source
                         check_job(job, timeout=1.0, raise_exception=True)
                         yield response[len(text0):], texts_out
+                        self.chat_conversation[-1] = (instruction, response[len(text0):])
                 break
             except Exception as e:
                 print(
@@ -717,9 +862,12 @@ class GradioClient(Client):
                 else:
                     print("trying again: %s" % trial, flush=True)
                     time.sleep(1 * trial)
+            finally:
+                # in case server changed, update in case clone()
+                self.server_hash = client.server_hash
 
     def check_model(self, model):
-        if model != 0:
+        if model != 0 and self.check_model_name:
             valid_llms = self.list_models()
             if (
                     isinstance(model, int)
