@@ -27,7 +27,7 @@ def make_prediction(question: str, local_server=True):
         # if you have API key for public instance:
         client = GradioClient("https://gpt.h2o.ai", h2ogpt_key=h2ogpt_key)
 
-    db_file_path = "http://0.0.0.0:8000/PAQ2277.txt"
+    db_file_path = ["http://0.0.0.0:8000/PAQ2277.txt", "http://0.0.0.0:8000/PAQ2278.txt"]
 
     # Q/A
     result = client.query("{}".format(question), url=db_file_path)
