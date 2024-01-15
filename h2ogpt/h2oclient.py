@@ -1,13 +1,36 @@
-# self-contained example used for readme, to be copied to README_CLIENT.md if changed, setting local_server = True at first
-import os
 # The grclient.py file can be copied from h2ogpt repo and used with local gradio_client for example use
 from gradio_utils.grclient import GradioClient
 from gradio_client import Client
 import ast
 from flask import Flask, request, jsonify
+from werkzeug.utils import secure_filename
+import os
 
 app = Flask(__name__)
+UPLOAD_FOLDER = 'resources'
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'mp4'}
 
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return 'No file part'
+
+    file = request.files['file']
+
+    if file.filename == '':
+        return 'No selected file'
+
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        return 'File uploaded successfully'
+
+    return 'Invalid file type'
 
 @app.route('/predict', methods=['POST'])
 def predict():
