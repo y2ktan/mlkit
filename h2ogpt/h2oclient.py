@@ -15,6 +15,12 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def list_files(dir="resources"):
+    path = dir
+    files = os.listdir(path)
+    return files
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -39,7 +45,6 @@ def predict():
     prediction = make_prediction(text) # This function should implement your machine learning model
     return jsonify({'answer': prediction})
 
-
 def make_prediction(question: str, local_server=True):
     if local_server:
         client = GradioClient("http://localhost:7860")
@@ -50,7 +55,10 @@ def make_prediction(question: str, local_server=True):
         # if you have API key for public instance:
         client = GradioClient("https://gpt.h2o.ai", h2ogpt_key=h2ogpt_key)
 
-    db_file_path = ["http://0.0.0.0:8000/PAQ2277.txt", "http://0.0.0.0:8000/PAQ2278.txt"]
+    files = list_files()
+    db_file_path = []
+    for file in files:
+        db_file_path.append("http://0.0.0.0:8000/{fname}".format(fname=file))
 
     # Q/A
     result = client.query("{}".format(question), url=db_file_path)
