@@ -7,7 +7,7 @@ from werkzeug.utils import secure_filename
 import os
 
 app = Flask(__name__)
-UPLOAD_FOLDER = 'resources'
+UPLOAD_FOLDER = '../database'
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'mp4'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
