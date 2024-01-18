@@ -12,14 +12,17 @@ ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'mp4'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+
 def allowed_file(filename):
     return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+        filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 def list_files(dir="../database"):
     path = dir
     files = os.listdir(path)
     return files
+
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -38,12 +41,14 @@ def upload_file():
 
     return 'Invalid file type'
 
+
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
     text = data['question']
-    prediction = make_prediction(text) # This function should implement your machine learning model
+    prediction = make_prediction(text)  # This function should implement your machine learning model
     return jsonify({'answer': prediction})
+
 
 def make_prediction(question: str, local_server=True):
     if local_server:
@@ -61,7 +66,37 @@ def make_prediction(question: str, local_server=True):
         db_file_path.append("http://0.0.0.0:8000/{fname}".format(fname=file))
 
     # Q/A
-    result = client.query("{}".format(question), url=db_file_path)
+    result = client.query("Provide a short and straight to-the-point answer to the question in a sentence: {}".format(question), url=db_file_path)
+    return result
+
+
+@app.route('/predictText', methods=['POST'])
+def predictText():
+    data = request.get_json()
+    text = data['question']
+    prediction = make_predictionText(text)  # This function should implement your machine learning model
+    return jsonify({'answer': prediction})
+
+
+def make_predictionText(question: str, local_server=True):
+    if local_server:
+        client = GradioClient("http://localhost:7860")
+    else:
+        h2ogpt_key = os.getenv('H2OGPT_KEY') or os.getenv('H2OGPT_H2OGPT_KEY')
+        if h2ogpt_key is None:
+            return
+        # if you have API key for public instance:
+        client = GradioClient("https://gpt.h2o.ai", h2ogpt_key=h2ogpt_key)
+
+    files = list_files()
+    db_file_path = []
+    for file in files:
+        db_file_path.append("http://0.0.0.0:8000/{fname}".format(fname=file))
+
+    # Q/A
+    result = client.query(
+        "{}, the latest information from the text file, with a short response of no more than ten words".format(
+            question), url=db_file_path)
     return result
 
 
