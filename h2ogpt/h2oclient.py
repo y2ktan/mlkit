@@ -5,6 +5,7 @@ import ast
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 import os
+import datetime
 
 app = Flask(__name__)
 UPLOAD_FOLDER = '../database'
@@ -65,8 +66,11 @@ def make_prediction(question: str, local_server=True):
     for file in files:
         db_file_path.append("http://0.0.0.0:8000/{fname}".format(fname=file))
 
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    short_summary = "Provide a short and straight to-the-point answer to the question according to the information provided by URLs without providing the source of information and suggestion in the answer"
+
     # Q/A
-    result = client.query("Provide a short and straight to-the-point answer to the question in a sentence: {}".format(question), url=db_file_path)
+    result = client.query("{}: {},{}".format(short_summary, now, question), url=db_file_path)
     return result
 
 
