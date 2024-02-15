@@ -53,7 +53,7 @@ def predict():
 
 def make_prediction(question: str, local_server=True):
     if local_server:
-        client = GradioClient("http://localhost:7860")
+        client = GradioClient("http://localhost:7860", serialize=False)
     else:
         h2ogpt_key = os.getenv('H2OGPT_KEY') or os.getenv('H2OGPT_H2OGPT_KEY')
         if h2ogpt_key is None:

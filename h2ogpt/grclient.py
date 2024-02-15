@@ -7,6 +7,7 @@ import concurrent.futures
 import time
 import urllib.parse
 import uuid
+import warnings
 from concurrent.futures import Future
 from datetime import timedelta
 from enum import Enum
@@ -29,30 +30,30 @@ from importlib.metadata import distribution, PackageNotFoundError
 try:
     assert distribution('gradio_client') is not None
     have_gradio_client = True
-    is_gradio_client_version7 = distribution('gradio_client').version.startswith('0.7.')
+    from packaging import version
+
+    client_version = distribution('gradio_client').version
+    is_gradio_client_version7plus = version.parse(client_version) >= version.parse("0.7.0")
 except (PackageNotFoundError, AssertionError):
     have_gradio_client = False
-    is_gradio_client_version7 = False
+    is_gradio_client_version7plus = False
 
 from gradio_client.client import Job, DEFAULT_TEMP_DIR, Endpoint
 from gradio_client import Client
 
 
 def check_job(job, timeout=0.0, raise_exception=True, verbose=False):
-    if timeout == 0:
-        e = job.future._exception
-    else:
-        try:
-            e = job.future.exception(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            # not enough time to determine
-            if verbose:
-                print("not enough time to determine job status: %s" % timeout)
-            e = None
+    try:
+        e = job.exception(timeout=timeout)
+    except concurrent.futures.TimeoutError:
+        # not enough time to determine
+        if verbose:
+            print("not enough time to determine job status: %s" % timeout)
+        e = None
     if e:
         # raise before complain about empty response if some error hit
         if raise_exception:
-            raise RuntimeError(e)
+            raise RuntimeError(traceback.format_exception(e))
         else:
             return e
 
@@ -89,10 +90,14 @@ class GradioClient(Client):
             src: str,
             hf_token: str | None = None,
             max_workers: int = 40,
-            serialize: bool = None,
+            serialize: bool | None = None,
             output_dir: str | Path | None = DEFAULT_TEMP_DIR,
             verbose: bool = False,
             auth: tuple[str, str] | None = None,
+            headers: dict[str, str] | None = None,
+            upload_files: bool = True,
+            download_files: bool = True,
+
             h2ogpt_key: str = None,
             persist: bool = False,
             check_hash: bool = True,
@@ -100,19 +105,14 @@ class GradioClient(Client):
     ):
         """
         Parameters:
-            src: Either the name of the Hugging Face Space to load, (e.g. "abidlabs/whisper-large-v2") or the full URL (including "http" or "https") of the hosted Gradio app to load (e.g. "http://mydomain.com/app" or "https://bec81a83-5b5c-471e.gradio.live/").
-            hf_token: The Hugging Face token to use to access private Spaces. Automatically fetched if you are logged in via the Hugging Face Hub CLI. Obtain from: https://huggingface.co/settings/token
-            max_workers: The maximum number of thread workers that can be used to make requests to the remote Gradio app simultaneously.
-            serialize: Whether the client should serialize the inputs and deserialize the outputs of the remote API. If set to False, the client will pass the inputs and outputs as-is, without serializing/deserializing them. E.g. you if you set this to False, you'd submit an image in base64 format instead of a filepath, and you'd get back an image in base64 format from the remote API instead of a filepath.
-            output_dir: The directory to save files that are downloaded from the remote API. If None, reads from the GRADIO_TEMP_DIR environment variable. Defaults to a temporary directory on your machine.
-            verbose: Whether the client should print statements to the console.
-
+            Base Class parameters
+            +
             h2ogpt_key: h2oGPT key to gain access to the server
             persist: whether to persist the state, so repeated calls are aware of the prior user session
                      This allows the scratch MyData to be reused, etc.
                      This also maintains the chat_conversation history
             check_hash: whether to check git hash for consistency between server and client to ensure API always up to date
-            check_model_name: whether to check the model name here (adds delays), or just let server fail (fater)
+            check_model_name: whether to check the model name here (adds delays), or just let server fail (faster)
         """
         if serialize is None:
             # else converts inputs arbitrarily and outputs mutate
@@ -130,15 +130,25 @@ class GradioClient(Client):
             check_hash=check_hash,
             check_model_name=check_model_name,
         )
-        if is_gradio_client_version7:
+        if is_gradio_client_version7plus:
+            # 4.18.0:
+            #self.kwargs.update(dict(auth=auth, upload_files=upload_files, download_files=download_files))
+            # 4.17.0:
             self.kwargs.update(dict(auth=auth))
 
         self.verbose = verbose
         self.hf_token = hf_token
+        if serialize is not None:
+            warnings.warn(
+                "The `serialize` parameter is deprecated and will be removed. Please use the equivalent `upload_files` parameter instead."
+            )
+            upload_files = serialize
         self.serialize = serialize
+        self.upload_files = upload_files
+        self.download_files = download_files
         self.space_id = None
         self.cookies: dict[str, str] = {}
-        if is_gradio_client_version7:
+        if is_gradio_client_version7plus:
             self.output_dir = (
                 str(output_dir) if isinstance(output_dir, Path) else output_dir
             )
@@ -147,6 +157,8 @@ class GradioClient(Client):
         self.max_workers = max_workers
         self.src = src
         self.auth = auth
+        self.headers = headers
+
         self.config = None
         self.h2ogpt_key = h2ogpt_key
         self.persist = persist
@@ -169,12 +181,16 @@ class GradioClient(Client):
     def setup(self):
         src = self.src
 
+        headers0 = self.headers
         self.headers = build_hf_headers(
             token=self.hf_token,
             library_name="gradio_client",
             library_version=utils.__version__,
         )
-        # self.headers.pop('authorization', None)  # else get illegal Bearer for old servers
+        if headers0:
+            self.headers.update(headers0)
+        if 'authorization' in self.headers and self.headers['authorization'] == 'Bearer ':
+            self.headers['authorization'] = 'Bearer hf_xx'
         if src.startswith("http://") or src.startswith("https://"):
             _src = src if src.endswith("/") else src + "/"
         else:
@@ -200,75 +216,90 @@ class GradioClient(Client):
         if self.verbose:
             print(f"Loaded as API: {self.src} ✔")
 
-        if is_gradio_client_version7:
+        if is_gradio_client_version7plus:
             if self.auth is not None:
                 self._login(self.auth)
 
+        self.config = self._get_config()
         self.api_url = urllib.parse.urljoin(self.src, utils.API_URL)
-        if is_gradio_client_version7:
-            self.sse_url = urllib.parse.urljoin(self.src, utils.SSE_URL)
-            self.sse_data_url = urllib.parse.urljoin(self.src, utils.SSE_DATA_URL)
+        if is_gradio_client_version7plus:
+            self.protocol: str = self.config.get("protocol", "ws")
+            self.sse_url = urllib.parse.urljoin(
+                self.src, utils.SSE_URL_V0 if self.protocol == "sse" else utils.SSE_URL
+            )
+            self.sse_data_url = urllib.parse.urljoin(
+                self.src,
+                utils.SSE_DATA_URL_V0 if self.protocol == "sse" else utils.SSE_DATA_URL,
+            )
         self.ws_url = urllib.parse.urljoin(
             self.src.replace("http", "ws", 1), utils.WS_URL
         )
         self.upload_url = urllib.parse.urljoin(self.src, utils.UPLOAD_URL)
         self.reset_url = urllib.parse.urljoin(self.src, utils.RESET_URL)
-        self.config = self._get_config()
-        if is_gradio_client_version7:
-            self.protocol: str = self.config.get("protocol", "ws")
+        if is_gradio_client_version7plus:
             self.app_version = version.parse(self.config.get("version", "2.0"))
-            self._info = self._get_api_info()
+            self._info = None
         self.session_hash = str(uuid.uuid4())
 
-        if is_gradio_client_version7:
-            from gradio_client.client import EndpointV3Compatibility
-            endpoint_class = (
-                Endpoint if self.protocol.startswith("sse") else EndpointV3Compatibility
-            )
-        else:
-            endpoint_class = Endpoint
-
-        if is_gradio_client_version7:
-            self.endpoints = [
-                endpoint_class(self, fn_index, dependency, self.protocol)
-                for fn_index, dependency in enumerate(self.config["dependencies"])
-            ]
-        else:
-            self.endpoints = [
-                endpoint_class(self, fn_index, dependency)
-                for fn_index, dependency in enumerate(self.config["dependencies"])
-            ]
-
-        # Create a pool of threads to handle the requests
-        self.executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.max_workers
-        )
+        self.get_endpoints(self)
 
         # Disable telemetry by setting the env variable HF_HUB_DISABLE_TELEMETRY=1
         # threading.Thread(target=self._telemetry_thread).start()
 
         self.server_hash = self.get_server_hash()
 
-        if is_gradio_client_version7:
-            self.stream_open = False
-            self.streaming_future: Future | None = None
-            from gradio_client.utils import Message
-            self.pending_messages_per_event: dict[str, list[Message | None]] = {}
-            self.pending_event_ids: set[str] = set()
-
         return self
 
+    @staticmethod
+    def get_endpoints(client, verbose=False):
+        t0 = time.time()
+        # Create a pool of threads to handle the requests
+        client.executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=client.max_workers
+        )
+        if is_gradio_client_version7plus:
+            from gradio_client.client import EndpointV3Compatibility
+            endpoint_class = (
+                Endpoint if client.protocol.startswith("sse") else EndpointV3Compatibility
+            )
+        else:
+            endpoint_class = Endpoint
+
+        if is_gradio_client_version7plus:
+            client.endpoints = [
+                endpoint_class(client, fn_index, dependency, client.protocol)
+                for fn_index, dependency in enumerate(client.config["dependencies"])
+            ]
+        else:
+            client.endpoints = [
+                endpoint_class(client, fn_index, dependency)
+                for fn_index, dependency in enumerate(client.config["dependencies"])
+            ]
+        if is_gradio_client_version7plus:
+            client.stream_open = False
+            client.streaming_future = None
+            from gradio_client.utils import Message
+            client.pending_messages_per_event = {}
+            client.pending_event_ids = set()
+        if verbose:
+            print("duration endpoints: %s" % (time.time() - t0), flush=True)
+
     def get_server_hash(self):
+        t0 = time.time()
         if self.config is None:
             self.setup()
         """
         Get server hash using super without any refresh action triggered
         Returns: git hash of gradio server
         """
-        if self.check_hash:
-            return super().submit(api_name="/system_hash").result()
-        else:
-            return "GET_GITHASH"
+        try:
+            if self.check_hash:
+                return super().submit(api_name="/system_hash").result()
+            else:
+                return "GET_GITHASH"
+        finally:
+            if self.verbose:
+                print("duration server_hash: %s" % (time.time() - t0), flush=True)
 
     def refresh_client_if_should(self):
         if self.config is None:
@@ -335,13 +366,9 @@ class GradioClient(Client):
         for k, v in self.__dict__.items():
             setattr(client, k, v)
         client.reset_session()
-        client.executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.max_workers
-        )
-        client.endpoints = [
-            Endpoint(client, fn_index, dependency)
-            for fn_index, dependency in enumerate(client.config["dependencies"])
-        ]
+
+        self.get_endpoints(client)
+
         # transfer internals in case used
         client.server_hash = self.server_hash
         client.chat_conversation = self.chat_conversation
@@ -367,7 +394,7 @@ class GradioClient(Client):
             self.refresh_client()
             job = super().submit(*args, api_name=api_name, fn_index=fn_index)
 
-        if exception_handling: # for debugging if causes issues
+        if exception_handling:  # for debugging if causes issues
             # see if immediately failed
             e = check_job(job, timeout=0.01, raise_exception=False)
             if e is not None:
@@ -535,6 +562,7 @@ class GradioClient(Client):
                                       hyde_template: str = None,
                                       hyde_show_only_final: bool = True,
                                       doc_json_mode: bool = False,
+                                      metadata_in_context: list = [],
 
                                       asserts: bool = False,
                                       ) -> Generator[tuple[str | list[str], list[str]], None, None]:
@@ -639,6 +667,7 @@ class GradioClient(Client):
             hyde_template: see src/gen.py
             hyde_show_only_final: see src/gen.py
             doc_json_mode: see src/gen.py
+            metadata_in_context: see src/gen.py
 
             asserts: whether to do asserts to ensure handling is correct
 
@@ -769,6 +798,7 @@ class GradioClient(Client):
             hyde_template=hyde_template,
             hyde_show_only_final=hyde_show_only_final,
             doc_json_mode=doc_json_mode,
+            metadata_in_context=metadata_in_context,
         )
 
         # in case server changed, update in case clone()
@@ -812,14 +842,12 @@ class GradioClient(Client):
                     response = ""
                     texts_out = []
                     while not job.done():
-                        if job.communicator.job.latest_status.code.name == "FINISHED":
-                            break
                         e = check_job(job, timeout=0, raise_exception=False)
                         if e is not None:
                             break
-                        outputs_list = job.communicator.job.outputs
+                        outputs_list = job.outputs().copy()
                         if outputs_list:
-                            res = job.communicator.job.outputs[-1]
+                            res = outputs_list[-1]
                             res_dict = ast.literal_eval(res)
                             response = res_dict["response"]  # keeps growing
                             text_chunk = response[len(text0):]  # only keep new stuff
@@ -829,15 +857,14 @@ class GradioClient(Client):
                             text0 = response
                             assert text_chunk, "must yield non-empty string"
                             yield text_chunk, texts_out
-                        time.sleep(
-                            0.1
-                        )  # let LLM deliver larger chunks, don't need to get every token output immediately
+                        time.sleep(0.01)
 
                     # Get final response (if anything left), but also get the actual references (texts_out), above is empty.
-                    res_all = job.outputs()
+                    res_all = job.outputs().copy()
+                    success = job.communicator.job.latest_status.success
+                    timeout = 0.1 if success else 10
                     if len(res_all) > 0:
-                        # 0.1 slightly longer than 0.02 in open source
-                        check_job(job, timeout=0.1, raise_exception=True)
+                        check_job(job, timeout=timeout, raise_exception=True)
 
                         res = res_all[-1]
                         res_dict = ast.literal_eval(res)
@@ -847,8 +874,7 @@ class GradioClient(Client):
                         yield response[len(text0):], texts_out
                         self.chat_conversation[-1] = (instruction, response[len(text0):])
                     else:
-                        # 1.0 slightly longer than 0.3 in open source
-                        check_job(job, timeout=1.0, raise_exception=True)
+                        check_job(job, timeout=2.0 * timeout, raise_exception=True)
                         yield response[len(text0):], texts_out
                         self.chat_conversation[-1] = (instruction, response[len(text0):])
                 break
@@ -902,14 +928,101 @@ class GradioClient(Client):
             self.setup()
         return [x['base_model'] for x in ast.literal_eval(self.predict(api_name="/model_names"))]
 
+    def simple_stream(self,
+                      client_kwargs={},
+                      api_name='/submit_nochat_api',
+                      prompt='', prompter=None, sanitize_bot_response=False,
+                      max_time=None,
+                      is_public=False,
+                      raise_exception=True,
+                      verbose=False,
+                      ):
+        job = self.submit(str(dict(client_kwargs)), api_name=api_name)
+        sources = []
+        res_dict = dict(response='', sources=sources, save_dict={}, llm_answers={},
+                        response_no_refs='', sources_str='', prompt_raw='')
+        yield res_dict
+        text = ''
+        text0 = ''
+        strex = ''
+        tgen0 = time.time()
+        while not job.done():
+            e = check_job(job, timeout=0, raise_exception=False)
+            if e is not None:
+                break
+            outputs_list = job.outputs().copy()
+            if outputs_list:
+                res = outputs_list[-1]
+                res_dict = ast.literal_eval(res)
+                text = res_dict['response']
+                prompt_and_text = prompt + text
+                response = prompter.get_response(prompt_and_text, prompt=prompt,
+                                                 sanitize_bot_response=sanitize_bot_response)
+                text_chunk = response[len(text0):]
+                if not text_chunk:
+                    # just need some sleep for threads to switch
+                    time.sleep(0.001)
+                    continue
+                # save old
+                text0 = response
+                yield dict(response=response, sources=sources, save_dict={}, llm_answers={},
+                           response_no_refs=response, sources_str='', prompt_raw='')
+                if time.time() - tgen0 > max_time:
+                    if verbose:
+                        print("Took too long for Gradio: %s" % (time.time() - tgen0), flush=True)
+                    break
+            time.sleep(0.01)
+        # ensure get last output to avoid race
+        res_all = job.outputs().copy()
+        success = job.communicator.job.latest_status.success
+        timeout = 0.1 if success else 10
+        if len(res_all) > 0:
+            # don't raise unless nochat API for now
+            e = check_job(job, timeout=timeout, raise_exception=True)
+            if e is not None:
+                strex = ''.join(traceback.format_tb(e.__traceback__))
+
+            res = res_all[-1]
+            res_dict = ast.literal_eval(res)
+            text = res_dict['response']
+            sources = res_dict.get('sources')
+            if sources is None:
+                # then communication terminated, keep what have, but send error
+                if is_public:
+                    raise ValueError("Abrupt termination of communication")
+                else:
+                    raise ValueError("Abrupt termination of communication: %s" % strex)
+        else:
+            # if got no answer at all, probably something bad, always raise exception
+            # UI will still put exception in Chat History under chat exceptions
+            e = check_job(job, timeout=2.0 * timeout, raise_exception=True)
+            # go with old text if last call didn't work
+            if e is not None:
+                stre = str(e)
+                strex = ''.join(traceback.format_tb(e.__traceback__))
+            else:
+                stre = ''
+                strex = ''
+
+            print("Bad final response:%s %s %s: %s %s" % (res_all, prompt, text, stre, strex),
+                  flush=True)
+        prompt_and_text = prompt + text
+        response = prompter.get_response(prompt_and_text, prompt=prompt,
+                                         sanitize_bot_response=sanitize_bot_response)
+        res_dict = dict(response=response, sources=sources, save_dict={}, error=strex, llm_answers={},
+                        response_no_refs=response, sources_str='', prompt_raw='')
+        yield res_dict
+        return res_dict
+
     def stream(self,
-               client_kwargs,
+               client_kwargs={},
                api_name='/submit_nochat_api',
                prompt='', prompter=None, sanitize_bot_response=False,
                max_time=None,
                is_public=False,
                raise_exception=True,
-               verbose=False):
+               verbose=False,
+               ):
         strex = ''
         e = None
         res_dict = {}
@@ -967,9 +1080,10 @@ class GradioClient(Client):
             if 'timeout' in res_dict['save_dict']['extra_dict']:
                 break
         # final res
-        all_n = len(job.outputs())
+        outputs = job.outputs().copy()
+        all_n = len(outputs)
         for nn in range(n, all_n):
-            res = job.outputs()[nn]
+            res = outputs[nn]
             res_dict, text0 = yield from self.yield_res(res, res_dict, prompt, prompter, sanitize_bot_response,
                                                         max_time, text0, tgen0, verbose)
         return res_dict
