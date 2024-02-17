@@ -68,9 +68,8 @@ eval "$terminal_cmd"
 $python_cmd generate.py \
          --base_model=llama \
          --prompt_type=llama2 \
-         --model_path_llama=https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q6_K.gguf \
+         --model_path_llama=https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_K_M.gguf \
          --max_seq_len=4096 \
          --gradio_offline_level=1 \
          --share=False \
-         --prompt_type=human_bot \
          --langchain_mode=MyData
