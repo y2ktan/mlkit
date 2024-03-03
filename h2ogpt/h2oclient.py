@@ -47,8 +47,19 @@ def upload_file():
 def predict():
     data = request.get_json()
     text = data['question']
+
+
+    ip_address = data.get("ip_address", None)
+    radio_id = data.get("radio_id", None)
+
+    # print("IP address: " + ip_address)
+    # print("Radio ID: " + radio_id)
     prediction = make_prediction(text)  # This function should implement your machine learning model
-    return jsonify({'answer': prediction})
+    answer = jsonify({'answer': prediction})
+
+    #web socket to notify the drive of the message
+
+    return answer
 
 
 def make_prediction(question: str, local_server=True):
@@ -67,7 +78,7 @@ def make_prediction(question: str, local_server=True):
         db_file_path.append("http://0.0.0.0:8000/{fname}".format(fname=file))
 
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    short_summary = "Provide a short and straight to-the-point answer to the question according to the information provided by URLs without providing the source of information and suggestion in the answer"
+    short_summary = "Provide a short and straight to-the-point answer to the question according to the information provided without providing any unrelated information and suggestion in the answer. Question is: "
 
     # Q/A
     result = client.query("{}: {},{}".format(short_summary, now, question), url=db_file_path)

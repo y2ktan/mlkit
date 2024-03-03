@@ -33,6 +33,7 @@ if [ ! -d "$H2OGPT_FOLDER" ]; then
     $pip_cmd install -r requirements.txt
     $pip_cmd install -r reqs_optional/requirements_optional_langchain.txt
     $pip_cmd install -r reqs_optional/requirements_optional_gpt4all.txt
+    $pip_cmd install -r reqs_optional/requirements_optional_langchain.urls.txt
     $pip_cmd install gradio_client==0.6.1
     $pip_cmd install Flask==2.3.2
 
@@ -67,10 +68,17 @@ eval "$terminal_cmd"
 
 $python_cmd generate.py \
          --base_model=llama \
-         --prompt_type=llama2 \
+         --prompt_type=human_bot \
          --model_path_llama=https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q6_K.gguf \
-         --max_seq_len=4096 \
          --gradio_offline_level=1 \
          --share=False \
-         --prompt_type=human_bot \
          --langchain_mode=MyData
+
+#TRANSFORMERS_OFFLINE=1
+#$python_cmd generate.py --base_model=zephyr-7b-beta.Q5_K_M.gguf --prompt_type=zephyr --gradio_offline_level=2 --share=False
+##$python_cmd generate.py \
+##         --base_model=TheBloke/zephyr-7B-beta-GGUF \
+##         --prompt_type=zephyr \
+##         --max_seq_len=4096 \
+##         --gradio_offline_level=1 \
+##         --langchain_mode=MyData
