@@ -52,10 +52,10 @@ def predict():
     ip_address = data.get("ip_address", None)
     radio_id = data.get("radio_id", None)
 
-    # print("IP address: " + ip_address)
-    # print("Radio ID: " + radio_id)
+    print("IP address: " + ip_address)
+    print("Radio ID: " + radio_id)
     prediction = make_prediction(text)  # This function should implement your machine learning model
-    answer = jsonify({'answer': prediction})
+    answer = jsonify({'answer1': prediction, 'ip_address': ip_address, 'radio_id': radio_id})
 
     #web socket to notify the drive of the message
 
@@ -64,7 +64,7 @@ def predict():
 
 def make_prediction(question: str, local_server=True):
     if local_server:
-        client = GradioClient("http://localhost:7860", serialize=False)
+        client = GradioClient("http://localhost:7860")
     else:
         h2ogpt_key = os.getenv('H2OGPT_KEY') or os.getenv('H2OGPT_H2OGPT_KEY')
         if h2ogpt_key is None:
@@ -78,7 +78,7 @@ def make_prediction(question: str, local_server=True):
         db_file_path.append("http://0.0.0.0:8000/{fname}".format(fname=file))
 
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    short_summary = "Provide a short and straight to-the-point answer to the question according to the information provided without providing any unrelated information and suggestion in the answer. Question is: "
+    short_summary = "Provide a short and straight to-the-point answer to the question according to the information provided by URLs without providing the source of information and suggestion in the answer"
 
     # Q/A
     result = client.query("{}: {},{}".format(short_summary, now, question), url=db_file_path)
@@ -91,6 +91,14 @@ def predictText():
     text = data['question']
     prediction = make_predictionText(text)  # This function should implement your machine learning model
     return jsonify({'answer': prediction})
+
+
+@app.route('/textTest', methods=['POST'])
+def textQuery():
+    data = request.get_json()
+    text = data['question']
+    prediction = make_predictionText(text)  # This function should implement your machine learning model
+    return jsonify({'answer: test'})
 
 
 def make_predictionText(question: str, local_server=True):

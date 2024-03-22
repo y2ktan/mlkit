@@ -12,17 +12,17 @@ TXT_DIR = Path(DATA_DIR, "txt")
 
 # Read image paths
 # image_paths = sorted(glob.glob(str(IMAGE_DIR.joinpath("*.jpg"))))
-image_paths = ["data/image/faqs-what-happens-to-your-body-in-a-car-crash-2.jpg", "data/image/india-skoda-license-plate.jpg"]
+image_paths = ["data/image/stop2.jpg"]
 #image_paths = ["data/image/india-skoda-license-plate.jpg"]
 
 # Define prompt
-PROMPT = "What is the vehicle license plate number?"
+PROMPT = "Please write a police report based on the image"
 PROMPT_FOR_STOP_SIGN = ("Is there any stop sign attached to the bus? If yes just respond True, if no just respond "
                         "False, with just one word")
 PROMPT_FOR_CAR_PLATE_RECOGNITION = "extract and display only the license plate number, no sentence and no grammar"
 # Define bash command
-TEMP = 1
-bash_command = f"{LLAVA_EXEC_PATH} -m {MODEL_PATH} --mmproj {MMPROJ_PATH} --temp {TEMP} -p '{PROMPT}'"
+TEMP = 0.1
+bash_command = f"{LLAVA_EXEC_PATH} -m {MODEL_PATH} --mmproj {MMPROJ_PATH} --temp {TEMP} -p '{PROMPT_FOR_STOP_SIGN}'"
 
 # Loop over images and generate text summaries
 for image_path in image_paths:
