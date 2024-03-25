@@ -1,9 +1,0 @@
-Bus information
-Plate number PAQ2277
-Location 172 Avenue 1, Plantation Florida USA
-Recorded Time: 1400 27 November 2023
-
-Jackson is detected on the bus. He is sitting and sleeping in row 12
-Emily is detected on the bus. She is carrying a bottle and brown beg.
-Asron is detected on the bus.
-Suitcase is detect on the bus.

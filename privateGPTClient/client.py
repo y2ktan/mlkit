@@ -1,3 +1,5 @@
+import pprint
+
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 import os
@@ -7,6 +9,7 @@ import requests
 import ollama
 import asyncio
 import uuid
+import shutil
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'database'
@@ -38,44 +41,66 @@ def list_files(dir="../database"):
     return files
 
 
-async def describe_image(id = "User",
-                   prompt = "Please describe all of the images into a police reports.",
+def describe_image(id = "User",
+                   prompt = "Describe these images",
                    images: list = []):
+    # res = ollama.chat(
+    #     model="llava:latest",
+    #     messages=[
+    #         {
+    #             "role": "system",
+    #             "content": "You are an a police officer.",
+    #         },
+    #         {
+    #             'role': id,
+    #             'content': prompt,
+    #             'images': images
+    #         }
+    #     ]
+    # )
+
+    if not images:
+        messages = [{'role': id, 'content': prompt}]
+    else:
+        messages = [{'role': 'user', 'content': prompt, 'images': images}]
+
     res = ollama.chat(
         model="llava:latest",
-        messages=[
-            {
-                'role': id,
-                'content': prompt,
-                'images': images
-            }
-        ]
+        messages=messages
     )
 
     response = res['message']['content']
-    print(response)
+    pprint.pprint(res)
 
-    unique_filename = str(uuid.uuid4()) + '.txt'
-    with open(unique_filename, 'w+') as f:
-        f.write(response)
-    with open(unique_filename, 'r') as fread:
-        requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers, files={'file': (unique_filename, fread)})
+    unique_filename = os.path.join(UPLOAD_FOLDER, str(uuid.uuid4()) + ".txt")
+    with open(unique_filename, "w+") as file:
+        file.write(response)
+    with open(unique_filename, "rb") as file:
+        filename = secure_filename(unique_filename)
+        headers = {'Context-Type': 'v1/ingest/file'}
+        http_response = requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers, files={'file': (filename, file)})
+        if http_response.status_code == 200:
+            os.remove(unique_filename)
+            return True
+    return False
 
 
 #@curl -X POST -F "images=@/path/to/image1.png" -F "images=@/path/to/image2.png" http://0.0.0.:5044/upload-images
 @app.route('/upload-images', methods=['POST'])
 def upload_images():
-    if 'images' not in request.files:
+    import pprint
+    pprint.pprint(request.files)
+    if len(request.files.getlist('images')) <= 0:
         return jsonify({'message': 'No file part'}), 400
     files = request.files.getlist('images')
     result = []
     current_time = datetime.datetime.now()
-    image_folder = "database/"+current_time.strftime("%d%m%Y%H%M%S")
+    image_folder = os.path.join(UPLOAD_FOLDER, current_time.strftime("%d%m%Y%H%M%S"))
     os.makedirs(image_folder, exist_ok=True)
     local_image_file_list = []
 
     for file in files:
-        if file and allowed_file(file.filename):
+        if file and is_image(file.filename):
             filename = secure_filename(file.filename)
             image_path = os.path.join(image_folder, filename)
             local_image_file_list.append(image_path)
@@ -83,7 +108,10 @@ def upload_images():
             result.append({'filename': filename})
         else:
             return jsonify({'message': 'File type not allowed'}), 400
-    asyncio.run(describe_image(images=local_image_file_list))
+    if not describe_image(images=local_image_file_list):
+        return jsonify({'message': 'File failed to upload'}), 500
+    if shutil.os.path.exists(image_folder):
+        shutil.rmtree(image_folder)
     return jsonify(result)
 
 
