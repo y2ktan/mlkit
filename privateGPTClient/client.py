@@ -10,6 +10,7 @@ import ollama
 import asyncio
 import uuid
 import shutil
+import speechToText
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'database'
@@ -156,12 +157,12 @@ def clean_files():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    data = request.get_json()
-    text = data['question']
-
-
-    ip_address = data.get("ip_address", None)
-    radio_id = data.get("radio_id", None)
+    if 'file' in request.files:
+        file = request.files['file']
+        text = speechToText.speech_to_text(file)
+    else:
+        data = request.get_json()
+        text = data['question']
 
     prediction = make_prediction(text)
     answer = jsonify({'answer': prediction})
