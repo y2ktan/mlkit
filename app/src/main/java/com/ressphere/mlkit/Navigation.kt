@@ -4,8 +4,10 @@ import android.app.Application
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.lifecycle.ViewModel
@@ -18,6 +20,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.ressphere.mlkit.data.ChatMessage
 import com.ressphere.mlkit.navItemComposeUI.ChatFragment
+import com.ressphere.mlkit.navItemComposeUI.PlayBackAlertMessageFragment
 import com.ressphere.mlkit.navItemComposeUI.ServiceFragment
 
 val homeNavItem = NavigationItem(
@@ -35,9 +38,17 @@ val chatNavItem = NavigationItem(
     route="Chat"
 )
 
+val alertNavItem = NavigationItem(
+    title = "Alert",
+    selectedIcon = Icons.Filled.Warning,
+    unselectedIcon = Icons.Outlined.Warning,
+    route="Alert"
+)
+
 val items = listOf(
     homeNavItem,
-    chatNavItem
+    chatNavItem,
+    alertNavItem
 )
 
 @Composable
@@ -57,6 +68,9 @@ fun Navigation(app: Application,
         }
         composable(chatNavItem.route!!) {
             ServiceFragment(context = app.applicationContext)
+        }
+        composable(alertNavItem.route!!) {
+            PlayBackAlertMessageFragment(app.applicationContext, chatMessages)
         }
     }
 }

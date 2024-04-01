@@ -45,6 +45,10 @@ class ChatViewModel(app: Application, dispatcher: CoroutineDispatcher): AndroidV
         }
     }
 
+    fun onBroadcastLastAlertMessage() {
+
+    }
+
     fun onRecordStart() {
         Log.d("vcfr67", "onRecordStart: ")
         appModule.speechToTextUseCase.startListening()

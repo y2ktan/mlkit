@@ -1,6 +1,9 @@
 package com.ressphere.mlkit.di
 
 import android.app.Application
+import com.ressphere.alertmanager.AlertMessageUsecase
+import com.ressphere.alertmanager.ReceiveAlertMessageUseCase
+import com.ressphere.domain.HttpRoutes
 import com.ressphere.nlp.NLPUsecase
 import com.ressphere.speech2text.SpeechRecognitionListener
 import com.ressphere.speech2text.SpeechToTextUseCase
@@ -11,6 +14,8 @@ interface AppModule {
     val speechRecognitionListener: SpeechRecognitionListener
     val nlpUseCase: NLPUsecase
     val textToSpeechUseCase: TextToSpeechUseCase
+    val alertMessageUsecase: AlertMessageUsecase
+    val receiveAlertMessageUsecase: ReceiveAlertMessageUseCase
 }
 
 class AppModuleImpl(
@@ -28,6 +33,14 @@ class AppModuleImpl(
             application.applicationContext
         )
     }
+    override val alertMessageUsecase: AlertMessageUsecase by lazy {
+        AlertMessageUsecase()
+    }
+
+    override val receiveAlertMessageUsecase: ReceiveAlertMessageUseCase by lazy {
+        ReceiveAlertMessageUseCase(HttpRoutes.BASE_URL)
+    }
+
 
     override val speechRecognitionListener: SpeechRecognitionListener by lazy {
         SpeechRecognitionListener()
