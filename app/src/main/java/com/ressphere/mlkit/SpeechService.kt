@@ -7,12 +7,9 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ressphere.mlkit.MyApplication.Companion.NOTIFICATION_CAHNNEL_ID
 import com.ressphere.mlkit.MyApplication.Companion.NOTIFICATION_ID
-import com.ressphere.speech2text.SpeechRecognitionListener
-import com.ressphere.speech2text.SpeechToTextUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -31,7 +28,7 @@ class SpeechService: Service() {
         speechServiceCoroutine.launch {
             withContext(Dispatchers.Default) {
                 MyApplication.appModule.speechRecognitionListener.flow.collectLatest {
-                    MyApplication.appModule.nlpUseCase.answer(it)
+                    MyApplication.appModule.nlpUseCase.ask(it)
                 }
             }
         }

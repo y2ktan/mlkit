@@ -14,8 +14,6 @@ interface AppModule {
     val speechRecognitionListener: SpeechRecognitionListener
     val nlpUseCase: NLPUsecase
     val textToSpeechUseCase: TextToSpeechUseCase
-    val alertMessageUsecase: AlertMessageUsecase
-    val receiveAlertMessageUsecase: ReceiveAlertMessageUseCase
 }
 
 class AppModuleImpl(
@@ -33,15 +31,7 @@ class AppModuleImpl(
             application.applicationContext
         )
     }
-    override val alertMessageUsecase: AlertMessageUsecase by lazy {
-        AlertMessageUsecase()
-    }
-
-    override val receiveAlertMessageUsecase: ReceiveAlertMessageUseCase by lazy {
-        ReceiveAlertMessageUseCase(HttpRoutes.BASE_URL)
-    }
-
-
+    
     override val speechRecognitionListener: SpeechRecognitionListener by lazy {
         SpeechRecognitionListener()
     }

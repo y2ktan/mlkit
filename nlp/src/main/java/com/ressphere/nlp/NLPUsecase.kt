@@ -76,7 +76,7 @@ class NLPUsecase(
         nlpExecutor.close()
     }
 
-    fun answer(question: String) {
+    fun ask(question: String) {
         Log.d(TAG, "question: $question")
         //bertQaUseCaseExecutor.execute(question)
         nlpExecutor.execute(question)

@@ -53,7 +53,8 @@ class MainActivity : ComponentActivity() {
                             navController = navController,
                             onRecordStart = chatViewModel::onRecordStart,
                             onRecordStop = chatViewModel::onRecordStop,
-                            isRecording = isRecording
+                            isRecording = isRecording,
+                            sendLastMessageAsAlertMessage = chatViewModel::sendLastMessageAsAlertMessage
                         )
                     }
 

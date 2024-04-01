@@ -57,6 +57,7 @@ fun Navigation(app: Application,
                onRecordStart: () -> Unit = {},
                onRecordStop: () -> Unit = {},
                isRecording: Boolean = false,
+               sendLastMessageAsAlertMessage: () -> Unit = {},
                navController: NavHostController =
                    rememberNavController()
 
@@ -70,7 +71,7 @@ fun Navigation(app: Application,
             ServiceFragment(context = app.applicationContext)
         }
         composable(alertNavItem.route!!) {
-            PlayBackAlertMessageFragment(app.applicationContext, chatMessages)
+            PlayBackAlertMessageFragment(sendLastMessageAsAlertMessage)
         }
     }
 }

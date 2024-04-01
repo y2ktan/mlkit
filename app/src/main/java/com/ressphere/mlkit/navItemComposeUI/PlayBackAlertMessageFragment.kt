@@ -15,8 +15,7 @@ import com.ressphere.mlkit.data.ChatMessage
 
 @Composable
 fun PlayBackAlertMessageFragment(
-    context: Context,
-    chatMessages: List<ChatMessage>
+    sendLastMessageAsAlertMessage: () -> Unit
 
 ) {
     Column(
@@ -25,7 +24,7 @@ fun PlayBackAlertMessageFragment(
         verticalArrangement = Arrangement.Center
     ) {
         Button(onClick = {
-
+            sendLastMessageAsAlertMessage()
         }) {
             Text(text = "Repeat last message")
         }
