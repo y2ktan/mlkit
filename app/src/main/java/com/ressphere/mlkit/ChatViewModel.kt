@@ -28,7 +28,7 @@ class ChatViewModel(app: Application, dispatcher: CoroutineDispatcher): AndroidV
         AlertMessageUsecase(viewModelScope)
     }
     private val receiveAlertMessageUsecase: ReceiveAlertMessageUseCase by lazy {
-        ReceiveAlertMessageUseCase(HttpRoutes.BASE_URL, viewModelScope)
+        ReceiveAlertMessageUseCase(HttpRoutes.WEB_SOCKET, viewModelScope)
     }
 
     init {
@@ -52,16 +52,25 @@ class ChatViewModel(app: Application, dispatcher: CoroutineDispatcher): AndroidV
         }
 
         receiveAlertMessageUsecase.message.onEach { message ->
-            _sourceMessage.update { chatMessages ->
-                chatMessages.plus(ChatMessage("source", "vp",
-                    message, Color.Red))
+            if(message.message.isNotEmpty()) {
+                _sourceMessage.update { chatMessages ->
+                    chatMessages.plus(
+                        ChatMessage(
+                            "source", "vp",
+                            message.message, Color.Red
+                        )
+                    )
+                }
+                appModule.textToSpeechUseCase.speak(message.message)
             }
-            appModule.textToSpeechUseCase.speak(message)
         }.launchIn(viewModelScope)
     }
 
     fun sendLastMessageAsAlertMessage() {
-        alertMessageUsecase.send(_sourceMessage.value.last().message)
+        if(_sourceMessage.value.isNotEmpty()) {
+            Log.d("vcfr67", "sendLastMessageAsAlertMessage: " + _sourceMessage.value.last().message)
+            alertMessageUsecase.send(_sourceMessage.value.last().message)
+        }
     }
 
     fun onRecordStart() {

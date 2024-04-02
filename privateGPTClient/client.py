@@ -7,14 +7,11 @@ import datetime
 import json
 import requests
 import ollama
-import asyncio
 import uuid
 import shutil
 import speechToText
-from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
-socketio = SocketIO(app, debug=True, cors_allowed_origins='*', async_mode='eventlet')
 UPLOAD_FOLDER = 'database'
 ALLOWED_EXTENSIONS = {'txt', 'pdf'}
 IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg'}
@@ -171,35 +168,6 @@ def predict():
 
     return answer
 
-
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected')
-    socketio.send('Welcome to the server!')
-
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    print('Client disconnected')
-
-
-@socketio.on('my_event')
-def checkping():
-    for x in range(5):
-        cmd = 'ping -c 1 8.8.8.8|head -2|tail -1'
-        listing1 = subprocess.run(cmd, stdout=subprocess.PIPE, text=True, shell=True)
-        sid = request.sid
-        emit('server', {"data1": x, "data": listing1.stdout}, room=sid)
-        socketio.sleep(1)
-
-
-@socketio.on('message')
-def handle_message(data):
-    print('Received message:', data)
-    socketio.send('Message received: ' + data)
-    emit('server', {"data": data}, broadcast=True)
-
-
 def make_prediction(question: str, radio_id="user"):
     headers = {"Content-Type": "application/json"}
     short_summary = ("Provide a short and straight to-the-point answer to the question according to the information provided without "
@@ -228,4 +196,3 @@ def make_prediction(question: str, radio_id="user"):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5044)
-    socketio.run(app, debug=True)
