@@ -13,7 +13,7 @@ import speechToText
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'database'
-ALLOWED_EXTENSIONS = {'txt', 'pdf'}
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'json'}
 IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 VIDEO_EXTENSION = {'mp4'}
 
@@ -81,8 +81,8 @@ def describe_image(id = "User",
         http_response = requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers, files={'file': (filename, file)})
         if http_response.status_code == 200:
             os.remove(unique_filename)
-            return True
-    return False
+            return (True, response)
+    return (False, None)
 
 
 #@curl -X POST -F "images=@/path/to/image1.png" -F "images=@/path/to/image2.png" http://0.0.0.:5044/upload-images
@@ -90,6 +90,9 @@ def describe_image(id = "User",
 def upload_images():
     import pprint
     pprint.pprint(request.files)
+    prompt = None
+    if 'prompt' in request.form:
+        prompt = request.form['prompt']
     if len(request.files.getlist('images')) <= 0:
         return jsonify({'message': 'No file part'}), 400
     files = request.files.getlist('images')
@@ -108,11 +111,20 @@ def upload_images():
             result.append({'filename': filename})
         else:
             return jsonify({'message': 'File type not allowed'}), 400
-    if not describe_image(images=local_image_file_list):
+    if prompt:
+        llava_result, answer = describe_image(prompt=prompt, images=local_image_file_list)
+    else:
+        llava_result, answer = describe_image(images=local_image_file_list)
+
+    if not llava_result:
         return jsonify({'message': 'File failed to upload'}), 500
+
     if shutil.os.path.exists(image_folder):
         shutil.rmtree(image_folder)
-    return jsonify(result)
+    if llava_result:
+        return jsonify({'message': answer})
+    else:
+        return jsonify(result)
 
 
 @app.route('/upload', methods=['POST'])
