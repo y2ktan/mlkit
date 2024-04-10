@@ -140,7 +140,10 @@ def upload_file():
     if file and allowed_file(file.filename):
         headers = {'Context-Type': 'v1/ingest/file'}
         filename = secure_filename(file.filename)
-        response = requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers, files={'file': (filename, file)})
+        local_file_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(local_file_path)
+        with open(local_file_path, "rb") as local_file:
+            response = requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers, files={'file': (filename, local_file)})
         if response.status_code == 200:
             return 'File uploaded successfully'
     return 'Invalid file type'
