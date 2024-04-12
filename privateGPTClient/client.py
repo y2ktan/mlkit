@@ -10,6 +10,9 @@ import ollama
 import uuid
 import shutil
 import speechToText
+from BusAttendance import BusAttendance
+from model.Bus import *
+from model.Passenger import *
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'database'
@@ -23,6 +26,17 @@ PRIVATE_GPT_COMPLETION_URL = "http://0.0.0.0:8001/v1/chat/completions"
 PRIVATE_GPT_INGESTION_URL = "http://0.0.0.0:8001/v1/ingest/file"
 PRIVATE_GPT_INGESTION_LIST_URL = "http://0.0.0.0:8001/v1/ingest/list"
 PRIVATE_GPT_DEL_INGESTION_URL = "http://0.0.0.0:8001/v1/ingest"
+BUS_ATTENDANCE_FILE_NAME = "bus_attendance.json"
+BUS_ATTENDANCE_FILE = os.path.join(UPLOAD_FOLDER, BUS_ATTENDANCE_FILE_NAME)
+
+
+def init_or_reset():
+    bus = Bus(plate_number='', bus_activities=[])
+    passengers: list[Passenger] = []
+    return BusAttendance(bus, passengers)
+
+
+_bus_attendance = init_or_reset()
 
 
 def allowed_file(filename):
@@ -32,7 +46,7 @@ def allowed_file(filename):
 
 def is_image(filename):
     return '.' in filename and \
-            filename.rsplit('.', 1)[1].lower() in IMAGE_EXTENSIONS
+        filename.rsplit('.', 1)[1].lower() in IMAGE_EXTENSIONS
 
 
 def list_files(dir="../database"):
@@ -41,8 +55,8 @@ def list_files(dir="../database"):
     return files
 
 
-def describe_image(id = "User",
-                   prompt = "Describe these images",
+def describe_image(id="User",
+                   prompt="Describe these images",
                    images: list = []):
     # res = ollama.chat(
     #     model="llava:latest",
@@ -85,7 +99,7 @@ def describe_image(id = "User",
     return (False, None)
 
 
-#@curl -X POST -F "images=@/path/to/image1.png" -F "images=@/path/to/image2.png" http://0.0.0.:5044/upload-images
+# @curl -X POST -F "images=@/path/to/image1.png" -F "images=@/path/to/image2.png" http://0.0.0.:5044/upload-images
 @app.route('/upload-images', methods=['POST'])
 def upload_images():
     import pprint
@@ -129,6 +143,9 @@ def upload_images():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    source = None
+    if "source" in request.form:
+        source = request.form["source"]
     if 'file' not in request.files:
         return 'No file part'
 
@@ -142,8 +159,23 @@ def upload_file():
         filename = secure_filename(file.filename)
         local_file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(local_file_path)
+
         with open(local_file_path, "rb") as local_file:
-            response = requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers, files={'file': (filename, local_file)})
+            file_content = local_file.read()
+            print(file_content)
+            if source == "bus_activity":
+                _bus_attendance.update_bus_info_from_json(file_content)
+            else:
+                _bus_attendance.update_attendance_from_json(file_content)
+
+        with open(BUS_ATTENDANCE_FILE, "w+") as json_file:
+            formatted_json = json.loads(_bus_attendance.to_json())
+            json.dump(formatted_json, json_file, indent=4)
+
+        with open(BUS_ATTENDANCE_FILE, "rb") as local_bus_attendance_file:
+            response = requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers,
+                                     files={'file': (BUS_ATTENDANCE_FILE_NAME, local_bus_attendance_file)})
+
         if response.status_code == 200:
             return 'File uploaded successfully'
     return 'Invalid file type'
@@ -162,11 +194,12 @@ def clean_files():
                 delete_url = "{}/{}".format(PRIVATE_GPT_DEL_INGESTION_URL, str(doc_id))
                 print(delete_url)
                 requests.delete(delete_url)
+            _bus_attendance = init_or_reset()
             return "deleted files size: " + str(len(doc_ids))
         else:
             return "no data in reponse"
     else:
-        return "status code: "+str(response.status_code)
+        return "status code: " + str(response.status_code)
 
 
 @app.route('/predict', methods=['POST'])
@@ -183,22 +216,56 @@ def predict():
 
     return answer
 
-def make_prediction(question: str, radio_id="user"):
+
+@app.route('/missing_stop', methods=['GET'])
+def predict_missing_stop():
+    prediction = None
+    with open(BUS_ATTENDANCE_FILE, "rb") as local_bus_attendance_file:
+        _bus_attendance.from_json(local_bus_attendance_file.read())
+    passengers = _bus_attendance.get_passenger_list_who_missed_the_stop()
+    if passengers:
+        passenger_names = [passenger.name for passenger in passengers]
+        name_list = ', '.join(passenger_names)
+        place = passengers[0].final_destination
+        prediction = make_prediction("{} missed the disembarkation location at {}, "
+                                     "please generate a warning message to them".format(name_list, place),
+                                     use_context = False)
+    if prediction:
+        answer = jsonify({'answer': prediction})
+    else:
+        answer = jsonify({'answer': "None"})
+    return answer
+
+
+def make_prediction(question: str, radio_id="user", use_context=True):
     headers = {"Content-Type": "application/json"}
-    short_summary = ("Provide a short and straight to-the-point answer to the question according to the information provided without "
-                     "providing any unrelated information and suggestion in the answer. Question is: ")
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    query = "{}: {},{}".format(short_summary, now, question)
+    short_summary = ("By referring to the last activity by time, provide a short and straight to-the-point answer."
+                     "Please respond NONE if no answer fits the question. "
+                     "Do not provide any explanation, source of context, reasoning, or justification for your answer!")
+    # now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    query = "{} {}".format(short_summary, question)
 
     data = {
         "messages": [
+            {
+                "role": "system",
+                "content": "As a bus driver assistant proficient in analyzing JSON data, "
+                           "your primary goal is to ensure that all passengers reach their designated stops safely."
+                           "You will be provided with real-time JSON data containing information about the passengers, "
+                           "their intended stops, and the current location of the bus. "
+                           "You need to Parse and analyze JSON data in real-time."
+                           "The last index of the bus activities and passenger activities always "
+                           "is the latest and current activity."
+                           "Determine which passengers need to disembark at the bus current location."
+                           "Alert passengers who may miss their stop. Provide detail information of every passenger"
+            },
             {
                 "role": radio_id,
                 "content": query
             }
         ],
         "stream": False,
-        "use_context": True
+        "use_context": use_context
     }
 
     response = requests.post(PRIVATE_GPT_COMPLETION_URL, headers=headers, data=json.dumps(data))
