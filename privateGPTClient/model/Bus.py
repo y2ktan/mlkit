@@ -4,15 +4,17 @@ from enum import Enum
 from datetime import datetime
 
 
-class BusMovement(Enum):
-    STOP = "Reached and Waiting"
+class BusStatus(Enum):
+    STOP = "Reached"
+    WAITING = "Reached and waiting"
     GO = "Leaving"
+
 
 @dataclass_json
 @dataclass
 class BusActivity:
     location: str
-    activity: BusMovement
+    activity: BusStatus
     time: datetime = datetime.now()
 
 @dataclass_json

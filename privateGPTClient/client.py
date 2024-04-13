@@ -1,6 +1,7 @@
 import pprint
 
 from flask import Flask, request, jsonify
+from requests import Response
 from werkzeug.utils import secure_filename
 import os
 import datetime
@@ -11,8 +12,10 @@ import uuid
 import shutil
 import speechToText
 from BusAttendance import BusAttendance
+from ObjectDetectionEvent import ObjectDetectionEvent
 from model.Bus import *
 from model.Passenger import *
+from enum import Enum
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'database'
@@ -28,15 +31,23 @@ PRIVATE_GPT_INGESTION_LIST_URL = "http://0.0.0.0:8001/v1/ingest/list"
 PRIVATE_GPT_DEL_INGESTION_URL = "http://0.0.0.0:8001/v1/ingest"
 BUS_ATTENDANCE_FILE_NAME = "bus_attendance.json"
 BUS_ATTENDANCE_FILE = os.path.join(UPLOAD_FOLDER, BUS_ATTENDANCE_FILE_NAME)
+OBJECT_DETECTION_EVENTS_FILE_NAME = "object_detection_events.json"
+OBJECT_DETECTION_EVENTS_FILE = os.path.join(UPLOAD_FOLDER, OBJECT_DETECTION_EVENTS_FILE_NAME)
 
 
-def init_or_reset():
+class FileSourceType(Enum):
+    BUS_ACTIVITY = "bus_activity"
+    OBJECT_DETECTION_EVENTS = "object_detection_events"
+    PASSENGER_ACTIVITY = "pessenger_activity"
+
+def init_or_reset_bus_attendance():
     bus = Bus(plate_number='', bus_activities=[])
     passengers: list[Passenger] = []
-    return BusAttendance(bus, passengers)
+    object_detection_events: list[ObjectDetectionEvent] = []
+    return BusAttendance(bus, passengers, object_detection_events)
 
 
-_bus_attendance = init_or_reset()
+_bus_attendance = init_or_reset_bus_attendance()
 
 
 def allowed_file(filename):
@@ -155,7 +166,6 @@ def upload_file():
         return 'No selected file'
 
     if file and allowed_file(file.filename):
-        headers = {'Context-Type': 'v1/ingest/file'}
         filename = secure_filename(file.filename)
         local_file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(local_file_path)
@@ -163,22 +173,32 @@ def upload_file():
         with open(local_file_path, "rb") as local_file:
             file_content = local_file.read()
             print(file_content)
-            if source == "bus_activity":
+            print("FileSourceType source: {}".format(str(source)))
+            if source and source == FileSourceType.BUS_ACTIVITY.value:
                 _bus_attendance.update_bus_info_from_json(file_content)
+            elif source and source == FileSourceType.OBJECT_DETECTION_EVENTS.value:
+                _bus_attendance.update_object_detection_events_from_json(file_content)
             else:
                 _bus_attendance.update_attendance_from_json(file_content)
 
-        with open(BUS_ATTENDANCE_FILE, "w+") as json_file:
-            formatted_json = json.loads(_bus_attendance.to_json())
-            json.dump(formatted_json, json_file, indent=4)
-
-        with open(BUS_ATTENDANCE_FILE, "rb") as local_bus_attendance_file:
-            response = requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers,
-                                     files={'file': (BUS_ATTENDANCE_FILE_NAME, local_bus_attendance_file)})
+        response = ingest_context_to_llm(BUS_ATTENDANCE_FILE_NAME,
+                                         BUS_ATTENDANCE_FILE,
+                                         json.loads(_bus_attendance.to_json()))
 
         if response.status_code == 200:
             return 'File uploaded successfully'
     return 'Invalid file type'
+
+
+def ingest_context_to_llm(filename: str, local_file_path: str, formatted_json:str) -> Response:
+    headers = {'Context-Type': 'v1/ingest/file'}
+    with open(local_file_path, "w+") as json_file:
+        json.dump(formatted_json, json_file, indent=4)
+
+    with open(local_file_path, "rb") as local_bus_attendance_file:
+        response = requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers,
+                                 files={'file': (filename, local_bus_attendance_file)})
+        return response
 
 
 @app.route('/clean', methods=['POST'])
@@ -194,7 +214,7 @@ def clean_files():
                 delete_url = "{}/{}".format(PRIVATE_GPT_DEL_INGESTION_URL, str(doc_id))
                 print(delete_url)
                 requests.delete(delete_url)
-            _bus_attendance = init_or_reset()
+            _bus_attendance = init_or_reset_bus_attendance()
             return "deleted files size: " + str(len(doc_ids))
         else:
             return "no data in reponse"
@@ -236,6 +256,13 @@ def predict_missing_stop():
         answer = jsonify({'answer': "None"})
     return answer
 
+@app.route('/check_safe_to_alight', methods=['POST'])
+def check_safe_to_exit():
+    return ""
+
+@app.route('/get_list_of_violations', methods=['GET'])
+def get_list_of_violations():
+    return ""
 
 def make_prediction(question: str, radio_id="user", use_context=True):
     headers = {"Content-Type": "application/json"}
@@ -250,14 +277,14 @@ def make_prediction(question: str, radio_id="user", use_context=True):
             {
                 "role": "system",
                 "content": "As a bus driver assistant proficient in analyzing JSON data, "
-                           "your primary goal is to ensure that all passengers reach their designated stops safely."
+                           "your primary goal is to ensure that all passengers reach their designated stops safely. "
                            "You will be provided with real-time JSON data containing information about the passengers, "
-                           "their intended stops, and the current location of the bus. "
-                           "You need to Parse and analyze JSON data in real-time."
-                           "The last index of the bus activities and passenger activities always "
-                           "is the latest and current activity."
-                           "Determine which passengers need to disembark at the bus current location."
-                           "Alert passengers who may miss their stop. Provide detail information of every passenger"
+                           "current bus event and traffic around the bus. "
+                           "You need to Parse and analyze JSON data in real-time. "
+                           "The last index of the bus activities and passenger activities always is the latest and current activity. "
+                           "Determine which passengers need to disembark at the bus current location. "
+                           "Alert passengers who may miss their stop. Provide detail information of every passenger. "
+                           "Alert the passengers and driver when there is traffic nearby the bus to avoid any unexpected traffic accident."
             },
             {
                 "role": radio_id,

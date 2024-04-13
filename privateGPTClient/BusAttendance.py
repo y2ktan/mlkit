@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 from operator import attrgetter
 
-from model.Bus import BusActivity, Bus, BusMovement
+from model.Bus import BusActivity, Bus, BusStatus
+from model.ObjectDetection import ObjectDetection, CarMovement
 from model.Passenger import Passenger, PassengerRoute, PassengerOnboardStatus
 from dataclasses import dataclass
 from dataclasses_json import dataclass_json
@@ -12,6 +13,8 @@ import json
 class BusAttendance:
     bus: Bus
     passengers: list[Passenger]
+    traffic_events: list[ObjectDetection]
+    description = ""
 
     _instance = None
 
@@ -20,6 +23,7 @@ class BusAttendance:
             cls._instance = super().__new__(cls)
             cls._instance.bus = Bus(plate_number='ABC123', bus_activities=[])
             cls._instance.passengers = []
+            cls._instance.traffic_events = []
         return cls._instance
 
     def add_and_update_passenger(self, passenger: Passenger):
@@ -57,8 +61,10 @@ class BusAttendance:
     def from_json(cls, json_data):
         bus = Bus.from_json(json_data['bus'])
         passengers = [Passenger.from_json(p) for p in json_data['passengers']]
+        events = [Passenger.from_json(evt) for evt in json_data['traffic_events']]
         cls._instance.bus = bus
         cls._instance.passengers = passengers
+        cls._instance.traffic_events = events
         return cls._instance
 
     def update_attendance_from_json(self, passenger_data_json):
@@ -90,10 +96,16 @@ class BusAttendance:
     def update_bus_info_from_json(self, bus_data_list_json):
         bus_data_list = json.loads(bus_data_list_json)
         for bus_data in bus_data_list:
-            movement = BusMovement.GO if bus_data["bus_door_status"] == "closed" else BusMovement.STOP
+            if "bus_stop_sign_status" in bus_data and bus_data["bus_stop_sign_status"] == "show":
+                bus_status = BusStatus.STOP
+            elif bus_data["bus_door_status"] == "closed":
+                bus_status = BusStatus.GO
+            else:
+                bus_status = BusStatus.WAITING
+
             self.bus.plate_number = bus_data["bus_id"]
             bus_activity = BusActivity(bus_data["location"],
-                                       movement,
+                                       bus_status,
                                        datetime.strptime(bus_data['time'], "%Y/%m/%d %H:%M:%S").replace(
                                            tzinfo=timezone.utc))
             if bus_activity not in self.bus.bus_activities:
@@ -104,6 +116,8 @@ class BusAttendance:
             for p in self.passengers:
                 if not p.passenger_activities or p.passenger_activities[-1].location == "":
                     p.passenger_activities[-1].location = self.bus.bus_activities[-1].location
+        if self.bus.bus_activities and len(self.bus.bus_activities) > 0:
+            self.update_location_for_existing_traffic_violation(self.bus.bus_activities[-1].location)
 
 
     def get_passenger_list_who_missed_the_stop(self) -> list[Passenger]:
@@ -121,18 +135,42 @@ class BusAttendance:
             return passengers_who_might_have_missed_stop
         return []
 
+    def update_location_for_existing_traffic_violation(self, bus_location:str):
+        for object_detection in reversed(self.traffic_events):
+            if not object_detection.location or len(object_detection.location) <=0:
+                object_detection.location = bus_location
+
+    def update_object_detection_events_from_json(self, traffic_data_json):
+        traffic_data_list = json.loads(traffic_data_json)
+        if "data" in traffic_data_list:
+            for traffic_data in traffic_data_list["data"]:
+                if traffic_data["status"] == "nearby":
+                    movement = CarMovement.NEARBY
+                elif traffic_data["status"] == "stop":
+                    movement = CarMovement.STOP
+                else:
+                    movement = CarMovement.GONE
+
+                traffic_event = ObjectDetection(
+                    traffic_data["location"], traffic_data["car_plate_number"],
+                    movement, datetime.strptime(traffic_data["time"], "%Y/%m/%d %H:%M:%S")
+                )
+                if traffic_event not in self.traffic_events:
+                    self.traffic_events.append(traffic_event)
+        self.traffic_events = sorted(self.traffic_events, key=attrgetter('time'))
+
 
 
 if __name__ == '__main__':
     bus = Bus('', [])
-    bus_attendance = BusAttendance(bus, [])
+    bus_attendance = BusAttendance(bus, [], [])
     passengers = [
         Passenger(name='Alice', final_destination='Boston', passenger_activities=[PassengerRoute("", PassengerOnboardStatus.ENTERING, datetime.now())]),
         Passenger(name='Alice', final_destination='Boston', passenger_activities=[PassengerRoute("", PassengerOnboardStatus.ENTERING, datetime.now())]),
         Passenger(name='Bob', final_destination='Philadelphia', passenger_activities=[PassengerRoute("", PassengerOnboardStatus.ENTERING, datetime.now())]),
         Passenger(name='Charlie', final_destination='Washington D.C.', passenger_activities=[PassengerRoute("", PassengerOnboardStatus.ENTERING, datetime.now())]),
     ]
-    bus.bus_activities = BusActivity("", BusMovement.STOP, datetime.now())
+    bus.bus_activities = BusActivity("", BusStatus.STOP, datetime.now())
     # Add some Passenger instances
     for p in passengers:
         bus_attendance.add_and_update_passenger(p)
