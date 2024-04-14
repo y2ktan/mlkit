@@ -30,8 +30,6 @@ PRIVATE_GPT_INGESTION_LIST_URL = "http://0.0.0.0:8001/v1/ingest/list"
 PRIVATE_GPT_DEL_INGESTION_URL = "http://0.0.0.0:8001/v1/ingest"
 BUS_ATTENDANCE_FILE_NAME = "bus_attendance.json"
 BUS_ATTENDANCE_FILE = os.path.join(UPLOAD_FOLDER, BUS_ATTENDANCE_FILE_NAME)
-OBJECT_DETECTION_EVENTS_FILE_NAME = "object_detection_events.json"
-OBJECT_DETECTION_EVENTS_FILE = os.path.join(UPLOAD_FOLDER, OBJECT_DETECTION_EVENTS_FILE_NAME)
 
 
 class FileSourceType(Enum):
@@ -42,7 +40,7 @@ class FileSourceType(Enum):
 def init_or_reset_bus_attendance():
     bus = Bus(plate_number='', bus_activities=[])
     passengers: list[Passenger] = []
-    return BusAttendance(bus, passengers, object_detection_events)
+    return BusAttendance(bus, passengers, [])
 
 
 _bus_attendance = init_or_reset_bus_attendance()
