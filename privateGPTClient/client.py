@@ -12,7 +12,6 @@ import uuid
 import shutil
 import speechToText
 from BusAttendance import BusAttendance
-from ObjectDetectionEvent import ObjectDetectionEvent
 from model.Bus import *
 from model.Passenger import *
 from enum import Enum
@@ -43,7 +42,6 @@ class FileSourceType(Enum):
 def init_or_reset_bus_attendance():
     bus = Bus(plate_number='', bus_activities=[])
     passengers: list[Passenger] = []
-    object_detection_events: list[ObjectDetectionEvent] = []
     return BusAttendance(bus, passengers, object_detection_events)
 
 
