@@ -5,9 +5,9 @@ from datetime import datetime
 
 
 class BusStatus(Enum):
-    STOP = "Reached"
-    WAITING = "Reached and waiting"
-    GO = "Leaving"
+    STOP = "Stop"
+    WAITING = "Wait"
+    GO = "Go"
 
 
 @dataclass_json
