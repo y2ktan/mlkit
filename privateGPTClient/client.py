@@ -235,7 +235,7 @@ async def send_message_to_video_assistance():
         async with websockets.connect(WS_URI) as websocket:
             bus_activity = _bus_attendance.bus.bus_activities[-1] if _bus_attendance.bus.bus_activities else None
             is_bus_stop_sign_on = bus_activity and (bus_activity.activity == BusStatus.STOP or bus_activity.activity == BusStatus.WAITING)
-            message = "show stop sign" if is_bus_stop_sign_on else "hide stop sign"
+            message = "stop sign showed" if is_bus_stop_sign_on else "stop sign hidden"
 
             formatted_message = f"{Role.SYSTEM.value};{Role.VIDEO_ASSISTANCE.value};{message}"
             await websocket.send(formatted_message)
@@ -438,7 +438,7 @@ def make_prediction(question: str, radio_id="user", use_context=True):
             },
             {
                 "role": radio_id,
-                "content": "[INST]Is it dangerous to disembark?[/INST]{}".format(is_dangerous_message)
+                "content": "[INST]Is it dangerous to disembark or boarding the bus now?[/INST]{}".format(is_dangerous_message)
             },
             {
                 "role": radio_id,
