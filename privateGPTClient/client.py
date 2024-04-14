@@ -42,13 +42,22 @@ class FileSourceType(Enum):
     PASSENGER_ACTIVITY = "pessenger_activity"
 
 
-def init_or_reset_bus_attendance():
+def init_bus_attendance():
     bus = Bus(plate_number='', bus_activities=[])
     passengers: list[Passenger] = []
-    return BusAttendance(bus, passengers, [])
+    bus_attendance = BusAttendance(bus, passengers, [])
+    if os.path.exists(BUS_ATTENDANCE_FILE):
+        with open(BUS_ATTENDANCE_FILE, "rb") as f:
+            bus_attendance.from_json(f.read())
+    return bus_attendance
 
 
-_bus_attendance = init_or_reset_bus_attendance()
+def reset_bus_attendance():
+    os.remove(BUS_ATTENDANCE_FILE)
+    return init_bus_attendance()
+
+
+_bus_attendance = init_bus_attendance()
 
 
 def allowed_file(filename):
@@ -231,6 +240,7 @@ def ingest_context_to_llm(filename: str, local_file_path: str, formatted_json: s
 @app.route('/clean', methods=['POST'])
 def clean_files():
     doc_ids = []
+    _bus_attendance = reset_bus_attendance()
     response = requests.get(PRIVATE_GPT_INGESTION_LIST_URL)
     if response.status_code == 200:
         document_response = response.json()
@@ -241,7 +251,6 @@ def clean_files():
                 delete_url = "{}/{}".format(PRIVATE_GPT_DEL_INGESTION_URL, str(doc_id))
                 print(delete_url)
                 requests.delete(delete_url)
-            _bus_attendance = init_or_reset_bus_attendance()
             return "deleted files size: " + str(len(doc_ids))
         else:
             return "no data in reponse"
