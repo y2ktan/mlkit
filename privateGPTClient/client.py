@@ -315,6 +315,21 @@ def predict():
 @app.route('/missing_stop', methods=['GET'])
 def predict_missing_stop():
     prediction = None
+    passenger_name_list, destination= missing_stop()
+    if passenger_name_list and destination:
+        prediction = make_prediction("{} missed the disembarkation location at {}, "
+                                     "please generate a warning message to them".format(
+            passenger_name_list, destination),
+            use_context=False)
+
+    if prediction:
+        answer = jsonify({'answer': prediction})
+    else:
+        answer = jsonify({'answer': "None"})
+    return answer
+
+
+def missing_stop() -> (str, str):
     with open(BUS_ATTENDANCE_FILE, "rb") as local_bus_attendance_file:
         _bus_attendance.from_json(local_bus_attendance_file.read())
     passengers = _bus_attendance.get_passenger_list_who_missed_the_stop()
@@ -322,14 +337,8 @@ def predict_missing_stop():
         passenger_names = [passenger.name for passenger in passengers]
         name_list = ', '.join(passenger_names)
         place = passengers[0].final_destination
-        prediction = make_prediction("{} missed the disembarkation location at {}, "
-                                     "please generate a warning message to them".format(name_list, place),
-                                     use_context=False)
-    if prediction:
-        answer = jsonify({'answer': prediction})
-    else:
-        answer = jsonify({'answer': "None"})
-    return answer
+        return name_list, place
+    return None, None
 
 
 @app.route('/check_safe_to_alight', methods=['POST'])
@@ -344,9 +353,40 @@ def check_safe_to_exit():
     return jsonify({'answer': "None"})
 
 
-@app.route('/get_list_of_violations', methods=['GET'])
-def get_list_of_violations():
-    return ""
+def format_traffic_violation_query() -> str:
+    vehicle_list =_bus_attendance.vehicles_violate_stop_sign()
+    if len(vehicle_list) > 0:
+        violation_info = "following vehicle was recorded violating the stop sign. \n"
+        for vehicle in vehicle_list:
+            violation_info += "At {}, {} violating the stop sign at {} " \
+                              "because the status was recorded as \"Nearby\""\
+                .format(vehicle.time, vehicle.plate_number, vehicle.location)
+    else:
+        violation_info = "No violation detected."
+    print("violation_info: {}".format(violation_info))
+    return violation_info
+
+
+def format_who_on_the_bus() -> str:
+    passengers = _bus_attendance.who_on_the_bus()
+    message = ""
+    for passenger in passengers:
+        message += "{},".format(passenger.name)
+    message = "{} are the passengers on the bus".format(message) if len(message) > 0 else "nobody on the bus"
+    print("who are on the bus: "+message)
+    return message
+
+
+def format_who_not_on_the_bus() -> str:
+    passengers = _bus_attendance.who_not_on_bus()
+    message = ""
+    for passenger in passengers:
+        message += "{} disembarked at {} around {},".format(passenger.name,
+                                                            passenger.passenger_activities[-1].location,
+                                                            passenger.passenger_activities[-1].time)
+    message = "{}".format(message) if len(message) > 0 else "nobody disembarked the bus"
+    print("who are not on the bus: "+message)
+    return message
 
 
 def make_prediction(question: str, radio_id="user", use_context=True):
@@ -356,6 +396,15 @@ def make_prediction(question: str, radio_id="user", use_context=True):
                      "Do not provide any explanation, source of context, reasoning, or justification for your answer!")
     # now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     query = "{} {}".format(short_summary, question)
+
+    passenger_list, place = missing_stop()
+    print("passenger may miss is: {}".format(passenger_list))
+
+    is_dangerous, count_of_vehicle_nearby = _bus_attendance.get_list_of_last_vehicle_movement_on_bus_last_stop()
+    is_dangerous_message = "Dangerous!!!! {} vehicles detected nearby.".format(count_of_vehicle_nearby) \
+        if is_dangerous else "safe to disembark"
+
+    print("is_dangerous_message: {}".format(is_dangerous_message))
 
     data = {
         "messages": [
@@ -370,6 +419,26 @@ def make_prediction(question: str, radio_id="user", use_context=True):
                            "Determine which passengers need to disembark at the bus current location. "
                            "Alert passengers who may miss their stop. Provide detail information of every passenger. "
                            "Alert the passengers and driver when there is traffic nearby the bus to avoid any unexpected traffic accident."
+            },
+            {
+                "role": radio_id,
+                "content": "[INST]Who violate the stop sign?[/INST]{}".format(format_traffic_violation_query())
+            },
+            {
+                "role": radio_id,
+                "content": "[INST]Who are on the bus?[/INST]{}".format(format_who_on_the_bus())
+            },
+            {
+                "role": radio_id,
+                "content": "[INST]Who disembarked from the bus?[/INST]{}".format(format_who_not_on_the_bus())
+            },
+            {
+                "role": radio_id,
+                "content": "[INST]Who may miss their stop?[/INST]{}".format(passenger_list)
+            },
+            {
+                "role": radio_id,
+                "content": "[INST]Is it dangerous to disembark?[/INST]{}".format(is_dangerous_message)
             },
             {
                 "role": radio_id,

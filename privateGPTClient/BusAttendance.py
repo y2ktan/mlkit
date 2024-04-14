@@ -186,6 +186,19 @@ class BusAttendance:
         nearby_vehicle_count = sum(1 for event in last_movements.values() if event.status == CarMovement.NEARBY)
         return nearby_vehicle_count > 0, nearby_vehicle_count
 
+    def vehicles_violate_stop_sign(self) -> list[ObjectDetection]:
+        return [traffic_event for traffic_event in self.traffic_events if traffic_event.status == CarMovement.NEARBY]
+
+    def who_on_the_bus(self) -> list[Passenger]:
+        return [p for p in self.passengers if p.passenger_activities
+                and len(p.passenger_activities) > 0 and p.passenger_activities[-1].passenger_status !=
+                PassengerOnboardStatus.EXITING]
+
+    def who_not_on_bus(self) -> list[Passenger]:
+        return [p for p in self.passengers if p.passenger_activities
+                and len(p.passenger_activities) > 0 and p.passenger_activities[-1].passenger_status ==
+            PassengerOnboardStatus.EXITING]
+
 if __name__ == '__main__':
     bus = Bus('', [])
     bus_attendance = BusAttendance(bus, [], [])
