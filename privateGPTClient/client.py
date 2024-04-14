@@ -201,6 +201,8 @@ def upload_file():
             if source == FileSourceType.BUS_ACTIVITY.value:
                 asyncio.run(send_message_to_passenger_with_missing_stop())
                 asyncio.run(send_message_to_video_assistance())
+            if source == FileSourceType.OBJECT_DETECTION_EVENTS.value:
+                asyncio.run(send_message_to_alert_vehicle_nearby())
             return 'File uploaded successfully'
     return 'Invalid file type'
 
@@ -241,6 +243,27 @@ async def send_message_to_video_assistance():
         print("web socket server not running")
     pass
 
+
+async def send_message_to_alert_vehicle_nearby():
+    try:
+        async with websockets.connect(WS_URI) as websocket:
+            bus_activity = _bus_attendance.bus.bus_activities[-1] if _bus_attendance.bus.bus_activities else None
+            is_bus_stop_sign_on = bus_activity and (bus_activity.activity == BusStatus.STOP or bus_activity.activity == BusStatus.WAITING)
+            if not is_bus_stop_sign_on: return
+            response = check_safe_to_exit()
+            if response.status_code != 200:
+                return
+
+            message = response.json
+            answer = message.get("answer", "none")
+            if answer.lower() == "none":
+                answer = "\"No vehicles detected nearby, passengers are safe to board and alight the bus.\""
+
+            formatted_message = f"{Role.SYSTEM.value};{Role.BUS_DRIVER.value};{answer}"
+            await websocket.send(formatted_message)
+    except ConnectionRefusedError:
+        print("web socket server not running")
+    pass
 
 def ingest_context_to_llm(filename: str, local_file_path: str, formatted_json: str) -> Response:
     headers = {'Context-Type': 'v1/ingest/file'}
@@ -311,7 +334,14 @@ def predict_missing_stop():
 
 @app.route('/check_safe_to_alight', methods=['POST'])
 def check_safe_to_exit():
-    return ""
+    is_dangerous, count_of_vehicle_nearby = _bus_attendance.get_list_of_last_vehicle_movement_on_bus_last_stop()
+    if is_dangerous:
+        prediction = make_prediction("There {} vehicle detected moving near the bus, "
+                                     "please generate a warning message to the bus driver "
+                                     "and passengers who alighting the bus".format(count_of_vehicle_nearby),
+                                     use_context=False)
+        return jsonify({"answer":prediction})
+    return jsonify({'answer': "None"})
 
 
 @app.route('/get_list_of_violations', methods=['GET'])

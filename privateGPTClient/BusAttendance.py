@@ -7,6 +7,7 @@ from model.Passenger import Passenger, PassengerRoute, PassengerOnboardStatus
 from dataclasses import dataclass
 from dataclasses_json import dataclass_json
 import json
+import pytz
 
 @dataclass_json
 @dataclass
@@ -86,8 +87,8 @@ class BusAttendance:
                     PassengerRoute(
                         loc,
                         passerngerOnboardStatus,
-                        "At {}, {} {} at {}".format(datetime.strptime(p['time'], "%Y/%m/%d %H:%M:%S"), p["name"], passerngerOnboardStatus.value, loc),
-                        datetime.strptime(p['time'], "%Y/%m/%d %H:%M:%S")
+                        "At {}, {} {} at {}".format(datetime.strptime(p['time'], "%Y/%m/%d %H:%M:%S").replace(tzinfo=pytz.UTC), p["name"], passerngerOnboardStatus.value, loc),
+                        datetime.strptime(p['time'], "%Y/%m/%d %H:%M:%S").replace(tzinfo=pytz.UTC)
                     )
                 ]
             )
@@ -155,13 +156,35 @@ class BusAttendance:
 
                 traffic_event = ObjectDetection(
                     traffic_data["location"], traffic_data["car_plate_number"],
-                    movement, datetime.strptime(traffic_data["time"], "%Y/%m/%d %H:%M:%S")
+                    movement, datetime.strptime(traffic_data["time"], "%Y/%m/%d %H:%M:%S").replace(tzinfo=pytz.UTC)
                 )
                 if traffic_event not in self.traffic_events:
                     self.traffic_events.append(traffic_event)
         self.traffic_events = sorted(self.traffic_events, key=attrgetter('time'))
 
+    def get_list_of_vehicle_detected_on_bus_last_stop(self) -> list[ObjectDetection]:
+        bus_activity = self.bus.bus_activities[-1] if self.bus.bus_activities else None
+        is_bus_stop_sign_on = bus_activity and (
+                bus_activity.activity == BusStatus.STOP or bus_activity.activity == BusStatus.WAITING)
 
+        print("is_bus_stop_sign_on: {}".format(is_bus_stop_sign_on))
+        if is_bus_stop_sign_on:
+            print("bus stop time: {}".format(bus_activity.time))
+            for traffic_event in self.traffic_events:
+                print("traffic time: {}".format(traffic_event.time))
+            # get the traffic event happen after the last bus activity
+            events: list[ObjectDetection] = [traffic_event for traffic_event in self.traffic_events
+                                             if traffic_event.time >= bus_activity.time]
+            for event in events:
+                print("traffic event: {}".format(event))
+            return events
+        return []
+
+    def get_list_of_last_vehicle_movement_on_bus_last_stop(self) -> (bool, int):
+        events = self.get_list_of_vehicle_detected_on_bus_last_stop()
+        last_movements = {event.plate_number: event for event in events}
+        nearby_vehicle_count = sum(1 for event in last_movements.values() if event.status == CarMovement.NEARBY)
+        return nearby_vehicle_count > 0, nearby_vehicle_count
 
 if __name__ == '__main__':
     bus = Bus('', [])

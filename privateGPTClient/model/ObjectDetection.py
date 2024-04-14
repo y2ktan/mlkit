@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
+import pytz
 from dataclasses_json import dataclass_json
 
 
@@ -17,7 +18,7 @@ class ObjectDetection:
     location: str
     plate_number: str
     status: CarMovement
-    time: datetime = datetime.now()
+    time: datetime = datetime.now(tz=pytz.utc)
 
     def update_object_detection_events_from_json(self, bus_data_list_json):
         pass
