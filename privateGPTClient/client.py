@@ -1,4 +1,6 @@
+import asyncio
 import pprint
+import websockets
 
 from flask import Flask, request, jsonify
 from requests import Response
@@ -15,6 +17,8 @@ from BusAttendance import BusAttendance
 from model.Bus import *
 from model.Passenger import *
 from enum import Enum
+
+from model.WebSocketMessageAttribute import Role
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'database'
@@ -36,6 +40,7 @@ class FileSourceType(Enum):
     BUS_ACTIVITY = "bus_activity"
     OBJECT_DETECTION_EVENTS = "object_detection_events"
     PASSENGER_ACTIVITY = "pessenger_activity"
+
 
 def init_or_reset_bus_attendance():
     bus = Bus(plate_number='', bus_activities=[])
@@ -182,11 +187,37 @@ def upload_file():
                                          json.loads(_bus_attendance.to_json()))
 
         if response.status_code == 200:
+            if source == FileSourceType.BUS_ACTIVITY.value:
+                asyncio.run(send_message_to_passenger_with_missing_stop())
             return 'File uploaded successfully'
     return 'Invalid file type'
 
 
-def ingest_context_to_llm(filename: str, local_file_path: str, formatted_json:str) -> Response:
+async def send_message_to_passenger_with_missing_stop():
+    uri = "ws://{}:{}".format("0.0.0.0", 2277)
+    try:
+        async with websockets.connect(uri) as websocket:
+            bus_activity = _bus_attendance.bus.bus_activities[-1] if _bus_attendance.bus.bus_activities else None
+            is_bus_ready_to_go = bus_activity and bus_activity.activity == BusStatus.DOOR_CLOSE
+            if not is_bus_ready_to_go:
+                return
+
+            response = predict_missing_stop()
+            if response.status_code != 200:
+                return
+
+            message = response.json
+            answer = message.get("answer", "none")
+            if answer.lower() == "none":
+                return
+
+            formatted_message = f"{Role.SYSTEM.value};{Role.BUS_DRIVER.value};{answer}"
+            await websocket.send(formatted_message)
+    except ConnectionRefusedError:
+        print("web socket server not running")
+
+
+def ingest_context_to_llm(filename: str, local_file_path: str, formatted_json: str) -> Response:
     headers = {'Context-Type': 'v1/ingest/file'}
     with open(local_file_path, "w+") as json_file:
         json.dump(formatted_json, json_file, indent=4)
@@ -245,20 +276,23 @@ def predict_missing_stop():
         place = passengers[0].final_destination
         prediction = make_prediction("{} missed the disembarkation location at {}, "
                                      "please generate a warning message to them".format(name_list, place),
-                                     use_context = False)
+                                     use_context=False)
     if prediction:
         answer = jsonify({'answer': prediction})
     else:
         answer = jsonify({'answer': "None"})
     return answer
 
+
 @app.route('/check_safe_to_alight', methods=['POST'])
 def check_safe_to_exit():
     return ""
 
+
 @app.route('/get_list_of_violations', methods=['GET'])
 def get_list_of_violations():
     return ""
+
 
 def make_prediction(question: str, radio_id="user", use_context=True):
     headers = {"Content-Type": "application/json"}

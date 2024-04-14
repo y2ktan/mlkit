@@ -42,8 +42,8 @@ class BusAttendance:
                                             passenger.passenger_activities[-1].location),
                 passenger.passenger_activities[-1].time
             ))
-
-            p.passenger_activities = sorted(p.passenger_activities, key=attrgetter('time'))
+            p.passenger_activities = sorted(p.passenger_activities,
+                                            key=lambda x: x.time.astimezone(timezone.utc))
 
 
     def remove_passenger(self, passenger: Passenger):
@@ -99,6 +99,8 @@ class BusAttendance:
             if "bus_stop_sign_status" in bus_data and bus_data["bus_stop_sign_status"] == "show":
                 bus_status = BusStatus.STOP
             elif bus_data["bus_door_status"] == "closed":
+                bus_status = BusStatus.DOOR_CLOSE
+            elif "bus_stop_sign_status" in bus_data and bus_data["bus_stop_sign_status"] == "hide":
                 bus_status = BusStatus.GO
             else:
                 bus_status = BusStatus.WAITING
