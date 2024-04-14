@@ -35,6 +35,8 @@ PRIVATE_GPT_DEL_INGESTION_URL = "http://0.0.0.0:8001/v1/ingest"
 BUS_ATTENDANCE_FILE_NAME = "bus_attendance.json"
 BUS_ATTENDANCE_FILE = os.path.join(UPLOAD_FOLDER, BUS_ATTENDANCE_FILE_NAME)
 
+WS_URI = "ws://{}:{}".format("0.0.0.0", 2277)
+
 
 class FileSourceType(Enum):
     BUS_ACTIVITY = "bus_activity"
@@ -198,14 +200,14 @@ def upload_file():
         if response.status_code == 200:
             if source == FileSourceType.BUS_ACTIVITY.value:
                 asyncio.run(send_message_to_passenger_with_missing_stop())
+                asyncio.run(send_message_to_video_assistance())
             return 'File uploaded successfully'
     return 'Invalid file type'
 
 
 async def send_message_to_passenger_with_missing_stop():
-    uri = "ws://{}:{}".format("0.0.0.0", 2277)
     try:
-        async with websockets.connect(uri) as websocket:
+        async with websockets.connect(WS_URI) as websocket:
             bus_activity = _bus_attendance.bus.bus_activities[-1] if _bus_attendance.bus.bus_activities else None
             is_bus_ready_to_go = bus_activity and bus_activity.activity == BusStatus.DOOR_CLOSE
             if not is_bus_ready_to_go:
@@ -224,6 +226,20 @@ async def send_message_to_passenger_with_missing_stop():
             await websocket.send(formatted_message)
     except ConnectionRefusedError:
         print("web socket server not running")
+
+
+async def send_message_to_video_assistance():
+    try:
+        async with websockets.connect(WS_URI) as websocket:
+            bus_activity = _bus_attendance.bus.bus_activities[-1] if _bus_attendance.bus.bus_activities else None
+            is_bus_stop_sign_on = bus_activity and (bus_activity.activity == BusStatus.STOP or bus_activity.activity == BusStatus.WAITING)
+            message = "show stop sign" if is_bus_stop_sign_on else "hide stop sign"
+
+            formatted_message = f"{Role.SYSTEM.value};{Role.VIDEO_ASSISTANCE.value};{message}"
+            await websocket.send(formatted_message)
+    except ConnectionRefusedError:
+        print("web socket server not running")
+    pass
 
 
 def ingest_context_to_llm(filename: str, local_file_path: str, formatted_json: str) -> Response:
