@@ -55,7 +55,8 @@ def init_bus_attendance():
 
 
 def reset_bus_attendance():
-    os.remove(BUS_ATTENDANCE_FILE)
+    if os.path.exists(BUS_ATTENDANCE_FILE):
+        os.remove(BUS_ATTENDANCE_FILE)
     return init_bus_attendance()
 
 
@@ -193,14 +194,17 @@ def upload_file():
             else:
                 _bus_attendance.update_attendance_from_json(file_content)
 
+        delete_privategpt_storage()
         response = ingest_context_to_llm(BUS_ATTENDANCE_FILE_NAME,
                                          BUS_ATTENDANCE_FILE,
                                          json.loads(_bus_attendance.to_json()))
 
         if response.status_code == 200:
             if source == FileSourceType.BUS_ACTIVITY.value:
+                print("ws")
                 asyncio.run(send_message_to_passenger_with_missing_stop())
                 asyncio.run(send_message_to_video_assistance())
+                asyncio.run(send_message_to_alert_vehicle_nearby())
             if source == FileSourceType.OBJECT_DETECTION_EVENTS.value:
                 asyncio.run(send_message_to_alert_vehicle_nearby())
             return 'File uploaded successfully'
@@ -209,10 +213,12 @@ def upload_file():
 
 async def send_message_to_passenger_with_missing_stop():
     try:
+        print("send_message_to_passenger_with_missing_stop")
         async with websockets.connect(WS_URI) as websocket:
             bus_activity = _bus_attendance.bus.bus_activities[-1] if _bus_attendance.bus.bus_activities else None
             is_bus_ready_to_go = bus_activity and bus_activity.activity == BusStatus.DOOR_CLOSE
             if not is_bus_ready_to_go:
+                print("send_message_to_passenger_with_missing_stop halt!!!!")
                 return
 
             response = predict_missing_stop()
@@ -245,13 +251,16 @@ async def send_message_to_video_assistance():
 
 
 async def send_message_to_alert_vehicle_nearby():
+    print("send_message_to_alert_vehicle_nearby!!!!")
     try:
         async with websockets.connect(WS_URI) as websocket:
             bus_activity = _bus_attendance.bus.bus_activities[-1] if _bus_attendance.bus.bus_activities else None
             is_bus_stop_sign_on = bus_activity and (bus_activity.activity == BusStatus.STOP or bus_activity.activity == BusStatus.WAITING)
+            if bus_activity and bus_activity.activity == BusStatus.DOOR_CLOSE: return
             if not is_bus_stop_sign_on: return
             response = check_safe_to_exit()
             if response.status_code != 200:
+                print("send_message_to_alert_vehicle_nearby halt!!!!")
                 return
 
             message = response.json
@@ -268,6 +277,7 @@ async def send_message_to_alert_vehicle_nearby():
 def ingest_context_to_llm(filename: str, local_file_path: str, formatted_json: str) -> Response:
     headers = {'Context-Type': 'v1/ingest/file'}
     with open(local_file_path, "w+") as json_file:
+        #json.dump(formatted_json, json_file, separators=(',', ':'))
         json.dump(formatted_json, json_file, indent=4)
 
     with open(local_file_path, "rb") as local_bus_attendance_file:
@@ -278,8 +288,12 @@ def ingest_context_to_llm(filename: str, local_file_path: str, formatted_json: s
 
 @app.route('/clean', methods=['POST'])
 def clean_files():
-    doc_ids = []
     _bus_attendance = reset_bus_attendance()
+    return delete_privategpt_storage()
+
+
+def delete_privategpt_storage():
+    doc_ids = []
     response = requests.get(PRIVATE_GPT_INGESTION_LIST_URL)
     if response.status_code == 200:
         document_response = response.json()
@@ -295,7 +309,6 @@ def clean_files():
             return "no data in reponse"
     else:
         return "status code: " + str(response.status_code)
-
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -317,15 +330,11 @@ def predict_missing_stop():
     prediction = None
     passenger_name_list, destination= missing_stop()
     if passenger_name_list and destination:
-        prediction = make_prediction("{} missed the disembarkation location at {}, "
-                                     "please generate a warning message to them".format(
-            passenger_name_list, destination),
-            use_context=False)
-
+        prediction = "Warning! {}, bus has reached {}, please disembark NOW!".format(passenger_name_list, destination)
     if prediction:
         answer = jsonify({'answer': prediction})
     else:
-        answer = jsonify({'answer': "None"})
+        answer = jsonify({'answer': "All the passengers had disembarked. Good to go now!"})
     return answer
 
 

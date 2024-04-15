@@ -27,6 +27,13 @@ class BusAttendance:
             cls._instance.traffic_events = []
         return cls._instance
 
+    def generate_description(self, name: str, passengerRoute: PassengerRoute):
+        return "At {}, {} {} at {}".format(
+            passengerRoute.time,
+            name,
+            passengerRoute.passenger_status.value,
+            passengerRoute.location)
+
     def add_and_update_passenger(self, passenger: Passenger):
         found, p = self.find_passenger(passenger)
         if not found:
@@ -34,15 +41,20 @@ class BusAttendance:
             self.passengers.append(passenger)
         else:
             print("passenger found, update data")
-            p.passenger_activities.append(PassengerRoute(
-                passenger.passenger_activities[-1].location,
-                passenger.passenger_activities[-1].passenger_status,
-                "At {}, {} {} at {}".format(passenger.passenger_activities[-1].time,
-                                            passenger.name,
-                                            passenger.passenger_activities[-1].passenger_status.value,
-                                            passenger.passenger_activities[-1].location),
-                passenger.passenger_activities[-1].time
-            ))
+            if p.passenger_activities and len(p.passenger_activities) > 0 and \
+                    p.passenger_activities[-1].passenger_status == \
+                    passenger.passenger_activities[-1].passenger_status:
+                p.passenger_activities[-1].location = passenger.passenger_activities[-1].location
+                p.passenger_activities[-1].passenger_status = passenger.passenger_activities[-1].passenger_status
+                p.passenger_activities[-1].description = self.generate_description(passenger.name, passenger.passenger_activities[-1])
+                p.passenger_activities[-1].time = passenger.passenger_activities[-1].time
+            else:
+                p.passenger_activities.append(PassengerRoute(
+                    passenger.passenger_activities[-1].location,
+                    passenger.passenger_activities[-1].passenger_status,
+                    self.generate_description(passenger.name, passenger.passenger_activities[-1]),
+                    passenger.passenger_activities[-1].time
+                ))
             p.passenger_activities = sorted(p.passenger_activities,
                                             key=lambda x: x.time.astimezone(timezone.utc))
 
@@ -70,15 +82,19 @@ class BusAttendance:
 
     def update_attendance_from_json(self, passenger_data_json):
         passenger_data = json.loads(passenger_data_json)
+        if "data" not in passenger_data:
+            raise Exception("expected data in json but not found")
+        if len(passenger_data["data"]) <= 0:
+            raise Exception("passenger data shall not empty")
         self.bus.plate_number = passenger_data["data"][0]["bus_plate_number"]
+        loc = self.bus.bus_activities[-1].location if len(self.bus.bus_activities) > 0 else ""
         for p in passenger_data["data"]:
-            loc =  self.bus.bus_activities[-1].location if len(self.bus.bus_activities) > 0 else ""
             if p["status"] == "exited":
-                passerngerOnboardStatus = PassengerOnboardStatus.EXITING
+                passengerOnboardStatus = PassengerOnboardStatus.EXITING
             elif p["status"] == "entered":
-                passerngerOnboardStatus = PassengerOnboardStatus.ENTERING
+                passengerOnboardStatus = PassengerOnboardStatus.ENTERING
             else:
-                passerngerOnboardStatus = PassengerOnboardStatus.BOARDING
+                passengerOnboardStatus = PassengerOnboardStatus.BOARDING
 
             found_passenger = Passenger(
                 name=p["name"],
@@ -86,8 +102,12 @@ class BusAttendance:
                 passenger_activities=[
                     PassengerRoute(
                         loc,
-                        passerngerOnboardStatus,
-                        "At {}, {} {} at {}".format(datetime.strptime(p['time'], "%Y/%m/%d %H:%M:%S").replace(tzinfo=pytz.UTC), p["name"], passerngerOnboardStatus.value, loc),
+                        passengerOnboardStatus,
+                        self.generate_description(p["name"],
+                                                  PassengerRoute(loc,
+                                                                 passengerOnboardStatus,
+                                                                 "",
+                                                                 p['time'])),
                         datetime.strptime(p['time'], "%Y/%m/%d %H:%M:%S").replace(tzinfo=pytz.UTC)
                     )
                 ]
@@ -96,29 +116,37 @@ class BusAttendance:
 
     def update_bus_info_from_json(self, bus_data_list_json):
         bus_data_list = json.loads(bus_data_list_json)
-        for bus_data in bus_data_list:
-            if "bus_stop_sign_status" in bus_data and bus_data["bus_stop_sign_status"] == "show":
-                bus_status = BusStatus.STOP
+        if bus_data_list and len(bus_data_list) > 0:
+            bus_data = bus_data_list[-1]
+        else: return
+
+        if "bus_stop_sign_status" in bus_data and bus_data["bus_stop_sign_status"] == "show":
+            if bus_data["bus_door_status"] == "opened":
+                bus_status = BusStatus.WAITING
             elif bus_data["bus_door_status"] == "closed":
                 bus_status = BusStatus.DOOR_CLOSE
-            elif "bus_stop_sign_status" in bus_data and bus_data["bus_stop_sign_status"] == "hide":
-                bus_status = BusStatus.GO
             else:
-                bus_status = BusStatus.WAITING
+                bus_status = BusStatus.STOP
+        else:
+            bus_status = BusStatus.GO
 
-            self.bus.plate_number = bus_data["bus_id"]
-            bus_activity = BusActivity(bus_data["location"],
-                                       bus_status,
-                                       datetime.strptime(bus_data['time'], "%Y/%m/%d %H:%M:%S").replace(
-                                           tzinfo=timezone.utc))
-            if bus_activity not in self.bus.bus_activities:
-                self.bus.bus_activities.append(bus_activity)
-                self.bus.bus_activities = sorted(self.bus.bus_activities, key=attrgetter('time'))
+        self.bus.plate_number = bus_data["bus_id"]
+
+        bus_activity = BusActivity(bus_data["location"],
+                                   bus_status,
+                                   datetime.strptime(bus_data['time'], "%Y/%m/%d %H:%M:%S").replace(
+                                       tzinfo=timezone.utc))
+        if bus_activity not in self.bus.bus_activities:
+            self.bus.bus_activities.append(bus_activity)
+            self.bus.bus_activities = sorted(self.bus.bus_activities, key=attrgetter('time'))
+
         if self.passengers:
             # update all passengers who has no location
             for p in self.passengers:
-                if not p.passenger_activities or p.passenger_activities[-1].location == "":
+                if p.passenger_activities and p.passenger_activities[-1].location == "":
                     p.passenger_activities[-1].location = self.bus.bus_activities[-1].location
+                    p.passenger_activities[-1].description = \
+                        self.generate_description(p.name, p.passenger_activities[-1])
         if self.bus.bus_activities and len(self.bus.bus_activities) > 0:
             self.update_location_for_existing_traffic_violation(self.bus.bus_activities[-1].location)
 
