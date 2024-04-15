@@ -24,7 +24,8 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'database'
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'json'}
 IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg'}
-VIDEO_EXTENSION = {'mp4'}
+VIDEO_EXTENSIONS = {'mp4'}
+AUDIO_EXTENSIONS = {'wav'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -71,6 +72,10 @@ def allowed_file(filename):
 def is_image(filename):
     return '.' in filename and \
         filename.rsplit('.', 1)[1].lower() in IMAGE_EXTENSIONS
+        
+def is_audio(filename):
+    return '.' in filename and \
+        filename.rsplit('.', 1)[1].lower() in AUDIO_EXTENSIONS   
 
 
 def list_files(dir="../database"):
@@ -312,7 +317,7 @@ def delete_privategpt_storage():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    if 'file' in request.files:
+    if 'file' in request.files and is_audio(request.files['file'].filename):
         file = request.files['file']
         text = speechToText.speech_to_text(file)
     else:
@@ -339,6 +344,7 @@ def predict_missing_stop():
 
 
 def missing_stop() -> (str, str):
+    if not os.path.exists(BUS_ATTENDANCE_FILE): return None, None
     with open(BUS_ATTENDANCE_FILE, "rb") as local_bus_attendance_file:
         _bus_attendance.from_json(local_bus_attendance_file.read())
     passengers = _bus_attendance.get_passenger_list_who_missed_the_stop()
@@ -402,13 +408,17 @@ def make_prediction(question: str, radio_id="user", use_context=True):
     headers = {"Content-Type": "application/json"}
     short_summary = ("By referring to the last activity by time, provide a short and straight to-the-point answer."
                      "Please respond NONE if no answer fits the question. "
-                     "Do not provide any explanation, source of context, reasoning, or justification for your answer!")
+                     "Do not provide any explanation, source of context, reasoning, or justification for your answer! Question:")
     # now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    query = "{} {}".format(short_summary, question)
+    question = "{} {}".format(short_summary, question)
+    print("question: {}".format(question))
 
     passenger_list, place = missing_stop()
-    print("passenger may miss is: {}".format(passenger_list))
-
+    if passenger_list and len(passenger_list) > 0:
+        missing_bus_stop = "passengers who may miss: {}".format(passenger_list)
+    else:
+        missing_bus_stop = "Nobody"
+    print(missing_bus_stop)
     is_dangerous, count_of_vehicle_nearby = _bus_attendance.get_list_of_last_vehicle_movement_on_bus_last_stop()
     is_dangerous_message = "Dangerous!!!! {} vehicles detected nearby.".format(count_of_vehicle_nearby) \
         if is_dangerous else "safe to disembark"
@@ -430,28 +440,33 @@ def make_prediction(question: str, radio_id="user", use_context=True):
                            "Alert the passengers and driver when there is traffic nearby the bus to avoid any unexpected traffic accident."
             },
             {
-                "role": radio_id,
-                "content": "[INST]Who violate the stop sign?[/INST]{}".format(format_traffic_violation_query())
+                "role": "user",
+                "content": "<s>[INST]Who violate the stop sign?[/INST]{}</s>".format(format_traffic_violation_query())
+            },
+            {
+                "role": "user",
+                "content": "<s>[INST]Who are on the bus?[/INST]{}</s>".format(format_who_on_the_bus())
+            },
+            {
+                "role": "user",
+                "content": "<s>[INST]Who disembarked from the bus?[/INST]{}</s>".format(format_who_not_on_the_bus())
+            },
+            {
+                "role": "user",
+                "content": "<s>[INST]Who may miss their stop?[/INST]{}</s>".format(missing_bus_stop)
+            },
+            {
+                "role": "user",
+                "content": "<s>[INST]Is it dangerous to disembark or boarding the bus now?[/INST]{}</s>".format(is_dangerous_message)
+            },
+            {
+                "role": "user",
+                "content": "<s>[INST]Please answer \"Sorry, I do not have any answer.\" when no answer can be determined.[/INST]{}</s>".format(
+                    "Sorry, I do not have any answer.")
             },
             {
                 "role": radio_id,
-                "content": "[INST]Who are on the bus?[/INST]{}".format(format_who_on_the_bus())
-            },
-            {
-                "role": radio_id,
-                "content": "[INST]Who disembarked from the bus?[/INST]{}".format(format_who_not_on_the_bus())
-            },
-            {
-                "role": radio_id,
-                "content": "[INST]Who may miss their stop?[/INST]{}".format(passenger_list)
-            },
-            {
-                "role": radio_id,
-                "content": "[INST]Is it dangerous to disembark or boarding the bus now?[/INST]{}".format(is_dangerous_message)
-            },
-            {
-                "role": radio_id,
-                "content": query
+                "content": question
             }
         ],
         "stream": False,
