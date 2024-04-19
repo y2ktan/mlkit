@@ -282,8 +282,8 @@ async def send_message_to_alert_vehicle_nearby():
 def ingest_context_to_llm(filename: str, local_file_path: str, formatted_json: str) -> Response:
     headers = {'Context-Type': 'v1/ingest/file'}
     with open(local_file_path, "w+") as json_file:
-        #json.dump(formatted_json, json_file, separators=(',', ':'))
-        json.dump(formatted_json, json_file, indent=4)
+        json.dump(formatted_json, json_file, separators=(',', ':'))
+        #json.dump(formatted_json, json_file, indent=4)
 
     with open(local_file_path, "rb") as local_bus_attendance_file:
         response = requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers,
@@ -339,7 +339,7 @@ def predict_missing_stop():
     if prediction:
         answer = jsonify({'answer': prediction})
     else:
-        answer = jsonify({'answer': "All the passengers had disembarked. Good to go now!"})
+        answer = jsonify({'answer': "Everything is ready. Good to go now!"})
     return answer
 
 
