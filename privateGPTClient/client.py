@@ -209,7 +209,7 @@ def upload_file():
                 print("ws")
                 asyncio.run(send_message_to_passenger_with_missing_stop())
                 asyncio.run(send_message_to_video_assistance())
-                asyncio.run(send_message_to_alert_vehicle_nearby())
+                asyncio.run(notify_driver_on_stop_sign_status())
             if source == FileSourceType.OBJECT_DETECTION_EVENTS.value:
                 asyncio.run(send_message_to_alert_vehicle_nearby())
             return 'File uploaded successfully'
@@ -252,7 +252,23 @@ async def send_message_to_video_assistance():
             await websocket.send(formatted_message)
     except ConnectionRefusedError:
         print("web socket server not running")
-    pass
+
+
+async def notify_driver_on_stop_sign_status():
+    try:
+        async with websockets.connect(WS_URI) as websocket:
+            bus_activity = _bus_attendance.bus.bus_activities[-1] if _bus_attendance.bus.bus_activities else None
+            is_bus_stop_sign_on = bus_activity and (bus_activity.activity == BusStatus.STOP or bus_activity.activity == BusStatus.WAITING)
+            message = "stop sign showed" if is_bus_stop_sign_on else "stop sign hidden"
+
+            if message == "stop sign showed":
+                response = "bus stop-arm is extended"
+            else:
+                response = "bus stop-arm is lowered."
+            formatted_response_to_driver = f"{Role.SYSTEM.value};{Role.BUS_DRIVER.value};{response}"
+            await websocket.send(formatted_response_to_driver)
+    except ConnectionRefusedError:
+        print("web socket server not running")
 
 
 async def send_message_to_alert_vehicle_nearby():
