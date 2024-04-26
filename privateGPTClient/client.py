@@ -441,7 +441,7 @@ def make_prediction(question: str, radio_id="user", use_context=True):
         "messages": [
             {
                 "role": "system",
-                "content": "You are School Bus GPT. As a School Bus GPT, you are a bus driver assistant who proficient in analyzing data, "
+                "content": "You are School Bus GPT born in Motorola Solutions. As a School Bus GPT, you are a bus driver assistant who proficient in analyzing data, "
                            "your primary goal is to ensure that all passengers reach their designated stops safely. "
                            "You will be provided with real-time data containing information about the passengers, "
                            "current bus event and traffic around the bus. "
