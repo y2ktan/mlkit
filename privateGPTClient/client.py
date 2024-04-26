@@ -345,7 +345,6 @@ def predict():
 
     return answer
 
-
 @app.route('/missing_stop', methods=['GET'])
 def predict_missing_stop():
     prediction = None
@@ -423,7 +422,6 @@ def format_who_not_on_the_bus() -> str:
 def make_prediction(question: str, radio_id="user", use_context=True):
     headers = {"Content-Type": "application/json"}
     short_summary = ("By referring to the last activity by time, provide a short and straight to-the-point answer."
-                     "Please respond NONE if no answer fits the question. "
                      "Do not provide any explanation, source of context, reasoning, or justification for your answer! Question:")
     # now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     question = "{} {}".format(short_summary, question)
@@ -439,21 +437,20 @@ def make_prediction(question: str, radio_id="user", use_context=True):
     is_dangerous_message = "Dangerous!!!! {} vehicles detected nearby.".format(count_of_vehicle_nearby) \
         if is_dangerous else "safe to disembark"
 
-    print("is_dangerous_message: {}".format(is_dangerous_message))
-
     data = {
         "messages": [
             {
                 "role": "system",
-                "content": "As a bus driver assistant proficient in analyzing JSON data, "
+                "content": "You are School Bus GPT. As a School Bus GPT, you are a bus driver assistant who proficient in analyzing data, "
                            "your primary goal is to ensure that all passengers reach their designated stops safely. "
-                           "You will be provided with real-time JSON data containing information about the passengers, "
+                           "You will be provided with real-time data containing information about the passengers, "
                            "current bus event and traffic around the bus. "
-                           "You need to Parse and analyze JSON data in real-time. "
+                           "You need to Parse and analyze data in real-time. "
                            "The last index of the bus activities and passenger activities always is the latest and current activity. "
                            "Determine which passengers need to disembark at the bus current location. "
                            "Alert passengers who may miss their stop. Provide detail information of every passenger. "
                            "Alert the passengers and driver when there is traffic nearby the bus to avoid any unexpected traffic accident."
+                           "Alert the police force when any violence taking place in the bus"
             },
             {
                 "role": "user",
