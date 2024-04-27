@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from operator import attrgetter
 
 from model.Bus import BusActivity, Bus, BusStatus
+from model.Incident import Incident, IncidentLevel
 from model.ObjectDetection import ObjectDetection, CarMovement
 from model.Passenger import Passenger, PassengerRoute, PassengerOnboardStatus
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ class BusAttendance:
     bus: Bus
     passengers: list[Passenger]
     traffic_events: list[ObjectDetection]
+    incidents: list[Incident]
     description = ""
 
     _instance = None
@@ -25,6 +27,7 @@ class BusAttendance:
             cls._instance.bus = Bus(plate_number='ABC123', bus_activities=[])
             cls._instance.passengers = []
             cls._instance.traffic_events = []
+            cls._instance.incidents = []
         return cls._instance
 
     def generate_description(self, name: str, passengerRoute: PassengerRoute):
@@ -73,11 +76,13 @@ class BusAttendance:
     @classmethod
     def from_json(cls, json_data):
         bus = Bus.from_json(json_data['bus'])
-        passengers = [Passenger.from_json(p) for p in json_data['passengers']]
-        events = [Passenger.from_json(evt) for evt in json_data['traffic_events']]
+        passengers = [Passenger.from_json(p) for p in json_data['passengers']] if 'passengers' in json_data else []
+        events = [Passenger.from_json(evt) for evt in json_data['traffic_events']] if 'traffic_events' in json_data else []
+        incidents = [Incident.from_json(evt) for evt in json_data['incidents']] if 'incidents' in json_data else []
         cls._instance.bus = bus
         cls._instance.passengers = passengers
         cls._instance.traffic_events = events
+        cls._instance.incidents = incidents
         return cls._instance
 
     def update_attendance_from_json(self, passenger_data_json):
@@ -149,7 +154,23 @@ class BusAttendance:
                         self.generate_description(p.name, p.passenger_activities[-1])
         if self.bus.bus_activities and len(self.bus.bus_activities) > 0:
             self.update_location_for_existing_traffic_violation(self.bus.bus_activities[-1].location)
+        if self.incidents:
+            for incident in self.incidents:
+                if incident.location and incident.location == "":
+                    incident.location = self.bus.bus_activities[-1].location
+                if incident.plate_number and incident.plate_number == "":
+                    incident.plate_number = self.bus.plate_number
 
+    def update_bus_incident_from_json(self, bus_incident_data_json):
+        bus_incident_data = json.loads(bus_incident_data_json)
+        location = self.bus.bus_activities[-1].location if len(self.bus.bus_activities) > 0 else ""
+        incident_level = IncidentLevel.THREAT \
+            if "status" in \
+            bus_incident_data and bus_incident_data["status"] == IncidentLevel.THREAT.value \
+            else IncidentLevel.LOW_THREAT_INFO
+        incident = Incident(location, self.bus.plate_number, bus_incident_data["details"], incident_level)
+        if incident not in self.incidents:
+            self.incidents.append(incident)
 
     def get_passenger_list_who_missed_the_stop(self) -> list[Passenger]:
         bus_movements = self.bus.bus_activities
@@ -226,6 +247,7 @@ class BusAttendance:
         return [p for p in self.passengers if p.passenger_activities
                 and len(p.passenger_activities) > 0 and p.passenger_activities[-1].passenger_status ==
             PassengerOnboardStatus.EXITING]
+
 
 if __name__ == '__main__':
     bus = Bus('', [])

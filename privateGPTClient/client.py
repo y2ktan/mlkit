@@ -43,12 +43,13 @@ class FileSourceType(Enum):
     BUS_ACTIVITY = "bus_activity"
     OBJECT_DETECTION_EVENTS = "object_detection_events"
     PASSENGER_ACTIVITY = "pessenger_activity"
+    INCIDENT_ACTIVITY = "incident_activity"
 
 
 def init_bus_attendance():
     bus = Bus(plate_number='', bus_activities=[])
     passengers: list[Passenger] = []
-    bus_attendance = BusAttendance(bus, passengers, [])
+    bus_attendance = BusAttendance(bus, passengers, [], [])
     if os.path.exists(BUS_ATTENDANCE_FILE):
         with open(BUS_ATTENDANCE_FILE, "rb") as f:
             bus_attendance.from_json(f.read())
@@ -196,6 +197,8 @@ def upload_file():
                 _bus_attendance.update_bus_info_from_json(file_content)
             elif source and source == FileSourceType.OBJECT_DETECTION_EVENTS.value:
                 _bus_attendance.update_object_detection_events_from_json(file_content)
+            elif source and source == FileSourceType.INCIDENT_ACTIVITY.value:
+                _bus_attendance.update_bus_incident_from_json(file_content)
             else:
                 _bus_attendance.update_attendance_from_json(file_content)
 
@@ -299,7 +302,6 @@ def ingest_context_to_llm(filename: str, local_file_path: str, formatted_json: s
     headers = {'Context-Type': 'v1/ingest/file'}
     with open(local_file_path, "w+") as json_file:
         json.dump(formatted_json, json_file, separators=(',', ':'))
-        #json.dump(formatted_json, json_file, indent=4)
 
     with open(local_file_path, "rb") as local_bus_attendance_file:
         response = requests.post(PRIVATE_GPT_INGESTION_URL, headers=headers,

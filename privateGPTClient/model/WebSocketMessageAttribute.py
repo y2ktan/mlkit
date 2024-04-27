@@ -6,4 +6,5 @@ class Role(Enum):
     BUS_DRIVER = "bus driver"
     SCHOOL_STAFF = "school staff"
     VIDEO_ASSISTANCE = "video"
+    POLICE="police"
     ALL = "all"
